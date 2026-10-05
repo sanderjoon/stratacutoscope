@@ -199,17 +199,19 @@
       let initialCamera;
       let initialTarget;
       let motionEnabled = true;
-      let motionOrigin = null;
-      let motionBase = null;
+      let previousDeviceOrientation = null;
       let phoneMotionAvailable = false;
       let lastFrameTime = 0;
       const viewDirection = new THREE.Vector3(1, 0, 0);
       const cameraDirection = new THREE.Vector3();
+      const cameraOffset = new THREE.Vector3();
       const cutPoint = new THREE.Vector3();
       const cutPlane = new THREE.Plane();
       const planeNormal = new THREE.Vector3(0, 0, 1);
       const capGeometry = new THREE.PlaneGeometry(1, 1);
       const cameraDirectionForFit = new THREE.Vector3();
+      const previousOrientationInverse = new THREE.Quaternion();
+      const deviceOrientationDelta = new THREE.Quaternion();
       let previousPointerTime = 0;
 
       function setStatus(message, isError = false) {
@@ -523,17 +525,21 @@
         screenQuaternion.setFromAxisAngle(axisZ, -screenAngle);
         orientationQuaternion.multiply(screenQuaternion);
 
-        if (!motionOrigin) {
-          motionOrigin = orientationQuaternion.clone().invert();
-          motionBase = modelOrientation.quaternion.clone();
+        if (!previousDeviceOrientation) {
+          previousDeviceOrientation = orientationQuaternion.clone();
+          return;
         }
-        modelOrientation.quaternion.copy(motionBase).multiply(motionOrigin).multiply(orientationQuaternion);
+        previousOrientationInverse.copy(previousDeviceOrientation).invert();
+        deviceOrientationDelta.copy(orientationQuaternion).multiply(previousOrientationInverse);
+        cameraOffset.copy(camera.position).sub(controls.target).applyQuaternion(deviceOrientationDelta);
+        camera.position.copy(controls.target).add(cameraOffset);
+        camera.lookAt(controls.target);
+        previousDeviceOrientation.copy(orientationQuaternion);
       }
 
       async function enableMotion() {
         motionEnabled = true;
-        motionBase = modelOrientation.quaternion.clone();
-        motionOrigin = null;
+        previousDeviceOrientation = null;
         motionButton.textContent = "Motion on";
         motionButton.setAttribute("aria-pressed", "true");
         try {
@@ -556,7 +562,7 @@
           window.removeEventListener("deviceorientation", onDeviceOrientation);
           motionEnabled = false;
           phoneMotionAvailable = false;
-          motionOrigin = null;
+          previousDeviceOrientation = null;
           motionButton.textContent = "Motion off";
           motionButton.setAttribute("aria-pressed", "false");
           modelOrientation.quaternion.identity();
@@ -574,7 +580,7 @@
         controls.target.copy(initialTarget);
         camera.position.copy(initialCamera);
         controls.update();
-        motionOrigin = null;
+        previousDeviceOrientation = null;
       });
 
       window.addEventListener("resize", resize);
