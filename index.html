@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#e9e5dd">
+    <title>Stratacut — Hand specimen</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+        font-synthesis: none;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        --ink: #242522;
+        --muted: #74736e;
+        --paper: #0d9d36;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body { width: 100%; height: 100%; margin: 0; }
+
+      body {
+        overflow: hidden;
+        color: var(--ink);
+        background: var(--paper);
+      }
+
+      .viewer {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        height: 100dvh;
+        touch-action: none;
+      }
+
+      canvas {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+
+      .footer {
+        position: absolute;
+        z-index: 1;
+        right: max(24px, env(safe-area-inset-right));
+        left: max(24px, env(safe-area-inset-left));
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        pointer-events: auto;
+      }
+
+      .footer { bottom: max(20px, env(safe-area-inset-bottom)); }
+
+      .actions { display: flex; gap: 8px; }
+
+      button {
+        min-height: 42px;
+        padding: 0 10px;
+        border: 0;
+        color: var(--ink);
+        background: transparent;
+        cursor: pointer;
+        letter-spacing: 0.08em;
+        touch-action: manipulation;
+      }
+
+      button:hover { opacity: 0.65; }
+      button[aria-pressed="true"] { font-weight: 800; }
+
+      button:disabled { cursor: wait; opacity: 0.55; }
+
+      button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+      .status {
+        position: absolute;
+        z-index: 2;
+        top: 50%;
+        left: 50%;
+        width: min(88vw, 380px);
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+        letter-spacing: 0.04em;
+        pointer-events: none;
+      }
+
+      .status[data-error="true"] { color: #9b382a; }
+
+      @media (max-width: 600px) {
+        .footer {
+          right: max(18px, env(safe-area-inset-right));
+          left: max(18px, env(safe-area-inset-left));
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="viewer" aria-label="Interactive 3D hand specimen">
+      <canvas id="scene" aria-label="3D model. Drag to rotate."></canvas>
+      <div class="status" id="status" role="status" aria-live="polite">Loading model…</div>
+      <footer class="footer">
+        <div class="actions">
+          <button id="motion" type="button" aria-pressed="true">Motion on</button>
+          <button id="reset" type="button" disabled>Reset</button>
+        </div>
+      </footer>
+    </main>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+      const MODEL_URL = "./20261003_HandFront_glb_v0002.glb";
+      const CUT_ZOOM_SENSITIVITY = 0.4;
+      const CUT_DRAG_SCREEN_TRAVEL = 1.5;
+      const DRAG_ROTATION_SENSITIVITY = 0.008;
+      const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
+      const HORIZONTAL_INERTIA_DAMPING = 1.1;
+      const VERTICAL_INERTIA_DAMPING = 4;
+      const status = document.querySelector("#status");
+      const motionButton = document.querySelector("#motion");
+      const resetButton = document.querySelector("#reset");
+      const canvas = document.querySelector("#scene");
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color("#0d9d36");
+
+      const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
+      camera.up.set(0, 1, 0);
+      camera.layers.enable(1);
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: false,
+        stencil: true
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.12;
+      renderer.localClippingEnabled = true;
+
+      const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0.95);
+      ambient.position.set(0, 0, 1);
+      scene.add(ambient);
+      const keyLight = new THREE.DirectionalLight(0xfff3e3, 0.7);
+      keyLight.position.set(-3.5, 5, 6);
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0xdce5ef, 4.8);
+      fillLight.position.set(4, 1.5, -4);
+      scene.add(fillLight);
+      const capFillLight = new THREE.DirectionalLight(0xffffff, 2.3);
+      capFillLight.layers.set(1);
+      scene.add(capFillLight);
+      scene.add(capFillLight.target);
+
+      const specimen = new THREE.Group();
+      scene.add(specimen);
+      const modelOrientation = new THREE.Group();
+      specimen.add(modelOrientation);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.075;
+      controls.enablePan = false;
+      controls.enableZoom = true;
+      controls.enableRotate = false;
+      controls.zoomSpeed = 0.3375;
+      controls.rotateSpeed = 0.62;
+      controls.target.set(0, 0, 0);
+
+      let fitDistance = 4;
+      let fitCameraDistance = 0;
+      let cutDragOffset = 0;
+      let previousTwoFingerCenterY = null;
+      let previousTwoFingerTime = 0;
+      let previousThreeFingerCenterY = null;
+      let specimenRotationX = 0;
+      let specimenRotationY = 0;
+      const activePointers = new Map();
+      const angularVelocity = new THREE.Vector2();
+      const modelBounds = new THREE.Box3();
+      let initialCamera;
+      let initialTarget;
+      let motionEnabled = true;
+      let motionOrigin = null;
+      let motionBase = null;
+      let phoneMotionAvailable = false;
+      let lastFrameTime = 0;
+      const viewDirection = new THREE.Vector3(1, 0, 0);
+      const cameraDirection = new THREE.Vector3();
+      const cutPoint = new THREE.Vector3();
+      const cutPlane = new THREE.Plane();
+      const planeNormal = new THREE.Vector3(0, 0, 1);
+      const capGeometry = new THREE.PlaneGeometry(1, 1);
+      const cameraDirectionForFit = new THREE.Vector3();
+      let previousPointerTime = 0;
+
+      function setStatus(message, isError = false) {
+        status.textContent = message;
+        status.dataset.error = String(isError);
+        status.hidden = !message;
+      }
+
+      function resize() {
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        if (!width || !height) return;
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        if (modelBounds.isEmpty() === false) {
+          fitCameraToModel();
+          initialCamera = camera.position.clone();
+          initialTarget = controls.target.clone();
+        }
+      }
+
+      function fitCameraToModel() {
+        cameraDirectionForFit.copy(camera.position).sub(controls.target).normalize();
+        if (cameraDirectionForFit.lengthSq() === 0) {
+          cameraDirectionForFit.copy(viewDirection);
+        }
+        camera.position.copy(controls.target).add(cameraDirectionForFit);
+        camera.lookAt(controls.target);
+        const verticalTangent = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+        const horizontalTangent = verticalTangent * camera.aspect;
+        const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+        const distanceToFit = (point) => {
+          const depth = point.dot(cameraDirectionForFit);
+          const horizontal = Math.abs(point.dot(cameraRight)) / horizontalTangent;
+          const vertical = Math.abs(point.dot(cameraUp)) / verticalTangent;
+          return depth + Math.max(horizontal, vertical);
+        };
+        let distance = 0;
+        for (let x = 0; x < 2; x += 1) {
+          for (let y = 0; y < 2; y += 1) {
+            for (let z = 0; z < 2; z += 1) {
+              const point = new THREE.Vector3(
+                x ? modelBounds.max.x : modelBounds.min.x,
+                y ? modelBounds.max.y : modelBounds.min.y,
+                z ? modelBounds.max.z : modelBounds.min.z
+              );
+              distance = Math.max(distance, distanceToFit(point));
+            }
+          }
+        }
+        camera.position.copy(controls.target).addScaledVector(
+          cameraDirectionForFit,
+          distance * 0.9
+        );
+        camera.lookAt(controls.target);
+        fitCameraDistance = camera.position.distanceTo(controls.target);
+      }
+
+      function updateCutPlane() {
+        cameraDirection.copy(camera.position).sub(controls.target).normalize();
+        const zoomInDistance = fitCameraDistance - camera.position.distanceTo(controls.target);
+        const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY + cutDragOffset;
+        cutPoint.copy(controls.target).addScaledVector(cameraDirection, cutDistance);
+        cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.negate(), cutPoint);
+        capGroup.position.copy(cutPoint);
+        capGroup.quaternion.setFromUnitVectors(planeNormal, cameraDirection);
+        capGroup.scale.setScalar(fitDistance * 4);
+        capFillLight.position.copy(camera.position);
+        capFillLight.target.position.copy(controls.target);
+      }
+
+      function applyDragRotation(horizontalAngle, verticalAngle) {
+        specimenRotationY -= horizontalAngle;
+        specimenRotationX -= verticalAngle;
+        specimen.rotation.set(specimenRotationX, specimenRotationY, 0, "YZX");
+      }
+
+      canvas.addEventListener("pointerdown", (event) => {
+        activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activePointers.size === 1) {
+          previousPointerTime = event.timeStamp;
+        } else {
+          angularVelocity.set(0, 0);
+        }
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        const previous = activePointers.get(event.pointerId);
+        if (!previous) return;
+        const deltaX = event.clientX - previous.x;
+        const deltaY = event.clientY - previous.y;
+        activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activePointers.size !== 1) return;
+
+        const elapsed = Math.max((event.timeStamp - previousPointerTime) / 1000, 1 / 120);
+        const horizontalAngle = deltaX * DRAG_ROTATION_SENSITIVITY;
+        const verticalAngle = deltaY * VERTICAL_DRAG_ROTATION_SENSITIVITY;
+        applyDragRotation(horizontalAngle, verticalAngle);
+        angularVelocity.set(
+          THREE.MathUtils.clamp(horizontalAngle / elapsed, -12, 12),
+          THREE.MathUtils.clamp(verticalAngle / elapsed, -12, 12)
+        );
+        previousPointerTime = event.timeStamp;
+      });
+
+      const finishPointer = (event) => {
+        activePointers.delete(event.pointerId);
+        if (activePointers.size) angularVelocity.set(0, 0);
+      };
+      canvas.addEventListener("pointerup", finishPointer);
+      canvas.addEventListener("pointercancel", finishPointer);
+
+      canvas.addEventListener("touchstart", (event) => {
+        previousTwoFingerCenterY = event.touches.length === 2
+          ? (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+          : null;
+        previousTwoFingerTime = event.timeStamp;
+        previousThreeFingerCenterY = event.touches.length === 3
+          ? (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3
+          : null;
+      }, { passive: true });
+
+      canvas.addEventListener("touchmove", (event) => {
+        if (event.touches.length === 2) {
+          const centerY = (event.touches[0].clientY + event.touches[1].clientY) * 0.5;
+          if (previousTwoFingerCenterY !== null) {
+            const elapsed = Math.max((event.timeStamp - previousTwoFingerTime) / 1000, 1 / 120);
+            const verticalAngle = (centerY - previousTwoFingerCenterY) *
+              VERTICAL_DRAG_ROTATION_SENSITIVITY;
+            applyDragRotation(0, verticalAngle);
+            angularVelocity.set(
+              0,
+              THREE.MathUtils.clamp(verticalAngle / elapsed, -12, 12)
+            );
+          }
+          previousTwoFingerCenterY = centerY;
+          previousTwoFingerTime = event.timeStamp;
+        } else {
+          previousTwoFingerCenterY = null;
+        }
+        if (event.touches.length !== 3) {
+          previousThreeFingerCenterY = null;
+          return;
+        }
+        const centerY = (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3;
+        if (previousThreeFingerCenterY !== null && canvas.clientHeight > 0) {
+          cutDragOffset += (centerY - previousThreeFingerCenterY) *
+            fitDistance * CUT_DRAG_SCREEN_TRAVEL / canvas.clientHeight;
+        }
+        previousThreeFingerCenterY = centerY;
+      }, { passive: true });
+
+      canvas.addEventListener("touchend", (event) => {
+        if (event.touches.length !== 2) previousTwoFingerCenterY = null;
+        if (event.touches.length < 3) previousThreeFingerCenterY = null;
+      }, { passive: true });
+
+      const capGroup = new THREE.Group();
+      scene.add(capGroup);
+
+      function createStencilGroup(geometry, renderOrder) {
+        const group = new THREE.Group();
+        const baseMaterial = new THREE.MeshBasicMaterial();
+        baseMaterial.depthWrite = false;
+        baseMaterial.depthTest = false;
+        baseMaterial.colorWrite = false;
+        baseMaterial.stencilWrite = true;
+        baseMaterial.stencilFunc = THREE.AlwaysStencilFunc;
+
+        const backMaterial = baseMaterial.clone();
+        backMaterial.side = THREE.BackSide;
+        backMaterial.clippingPlanes = [cutPlane];
+        backMaterial.stencilFail = THREE.IncrementWrapStencilOp;
+        backMaterial.stencilZFail = THREE.IncrementWrapStencilOp;
+        backMaterial.stencilZPass = THREE.IncrementWrapStencilOp;
+        const backFaces = new THREE.Mesh(geometry, backMaterial);
+        backFaces.renderOrder = renderOrder;
+        group.add(backFaces);
+
+        const frontMaterial = baseMaterial.clone();
+        frontMaterial.side = THREE.FrontSide;
+        frontMaterial.clippingPlanes = [cutPlane];
+        frontMaterial.stencilFail = THREE.DecrementWrapStencilOp;
+        frontMaterial.stencilZFail = THREE.DecrementWrapStencilOp;
+        frontMaterial.stencilZPass = THREE.DecrementWrapStencilOp;
+        const frontFaces = new THREE.Mesh(geometry, frontMaterial);
+        frontFaces.renderOrder = renderOrder;
+        group.add(frontFaces);
+        baseMaterial.dispose();
+        return group;
+      }
+
+      function createCap(meshMaterial, renderOrder, vertexColor) {
+        const capMaterial = meshMaterial.clone();
+        capMaterial.clippingPlanes = [];
+        capMaterial.vertexColors = false;
+        capMaterial.color.multiply(vertexColor);
+        if (capMaterial.emissive) {
+          capMaterial.emissive.copy(capMaterial.color);
+          capMaterial.emissiveIntensity = 0.65;
+        }
+        capMaterial.stencilWrite = true;
+        capMaterial.stencilRef = 0;
+        capMaterial.stencilFunc = THREE.NotEqualStencilFunc;
+        capMaterial.stencilFail = THREE.ReplaceStencilOp;
+        capMaterial.stencilZFail = THREE.ReplaceStencilOp;
+        capMaterial.stencilZPass = THREE.ReplaceStencilOp;
+
+        const cap = new THREE.Mesh(capGeometry, capMaterial);
+        cap.layers.enable(1);
+        cap.renderOrder = renderOrder;
+        cap.onAfterRender = (activeRenderer) => activeRenderer.clearStencil();
+        capGroup.add(cap);
+      }
+
+      function loadModel(gltf) {
+        const source = gltf.scene;
+        source.updateMatrixWorld(true);
+        const bounds = new THREE.Box3().setFromObject(source);
+        const center = bounds.getCenter(new THREE.Vector3());
+        modelBounds.copy(bounds);
+        modelBounds.min.sub(center);
+        modelBounds.max.sub(center);
+        const size = bounds.getSize(new THREE.Vector3());
+        const maxDimension = Math.max(size.x, size.y, size.z);
+        if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+          throw new Error("The GLB does not contain measurable geometry.");
+        }
+
+        fitDistance = maxDimension;
+        const meshes = [];
+        source.traverse((object) => {
+          if (object.isMesh) meshes.push(object);
+        });
+        if (!meshes.length) throw new Error("The GLB contains no mesh to display.");
+
+        for (const [index, mesh] of meshes.entries()) {
+          const geometry = mesh.geometry.clone();
+          const attributeColor = geometry.getAttribute("color_3");
+          const vertexColor = attributeColor
+            ? new THREE.Color(attributeColor.getX(0), attributeColor.getY(0), attributeColor.getZ(0))
+            : new THREE.Color(1, 1, 1);
+          if (attributeColor) {
+            geometry.setAttribute("color", attributeColor);
+          } else {
+            geometry.deleteAttribute("color");
+          }
+          geometry.deleteAttribute("color_1");
+          geometry.deleteAttribute("color_2");
+          geometry.deleteAttribute("color_3");
+          const centeredTransform = new THREE.Matrix4()
+            .makeTranslation(-center.x, -center.y, -center.z)
+            .multiply(mesh.matrixWorld);
+          geometry.applyMatrix4(centeredTransform);
+          const material = Array.isArray(mesh.material)
+            ? mesh.material.map((item) => {
+                const clone = item.clone();
+                clone.vertexColors = Boolean(attributeColor);
+                clone.clippingPlanes = [cutPlane];
+                return clone;
+              })
+            : mesh.material.clone();
+          if (Array.isArray(material)) {
+            material.forEach((item) => {
+              item.vertexColors = Boolean(attributeColor);
+              item.clippingPlanes = [cutPlane];
+            });
+          } else {
+            material.vertexColors = Boolean(attributeColor);
+            material.clippingPlanes = [cutPlane];
+          }
+          const materialList = Array.isArray(material) ? material : [material];
+          modelOrientation.add(createStencilGroup(geometry, index * 3 + 1));
+          const visibleMesh = new THREE.Mesh(geometry, material);
+          visibleMesh.renderOrder = index * 3 + 3;
+          modelOrientation.add(visibleMesh);
+          createCap(materialList[0], index * 3 + 2, vertexColor);
+          mesh.geometry.dispose();
+        }
+
+        controls.minDistance = maxDimension * 0.03;
+        controls.maxDistance = maxDimension * 20;
+        camera.position.copy(viewDirection);
+        resize();
+        initialCamera = camera.position.clone();
+        initialTarget = controls.target.clone();
+        controls.update();
+        resetButton.disabled = false;
+        updateCutPlane();
+        setStatus("");
+      }
+
+      const orientationEuler = new THREE.Euler();
+      const orientationQuaternion = new THREE.Quaternion();
+      const screenQuaternion = new THREE.Quaternion();
+      const axisZ = new THREE.Vector3(0, 0, 1);
+      const degree = Math.PI / 180;
+
+      function onDeviceOrientation(event) {
+        if (event.alpha === null || event.beta === null || event.gamma === null) return;
+        orientationEuler.set(
+          event.beta * degree,
+          event.alpha * degree,
+          -event.gamma * degree,
+          "YXZ"
+        );
+        orientationQuaternion.setFromEuler(orientationEuler);
+        const screenAngle = (screen.orientation?.angle ?? 0) * degree;
+        screenQuaternion.setFromAxisAngle(axisZ, -screenAngle);
+        orientationQuaternion.multiply(screenQuaternion);
+
+        if (!motionOrigin) {
+          motionOrigin = orientationQuaternion.clone().invert();
+          motionBase = modelOrientation.quaternion.clone();
+        }
+        modelOrientation.quaternion.copy(motionBase).multiply(motionOrigin).multiply(orientationQuaternion);
+      }
+
+      async function enableMotion() {
+        motionEnabled = true;
+        motionBase = modelOrientation.quaternion.clone();
+        motionOrigin = null;
+        motionButton.textContent = "Motion on";
+        motionButton.setAttribute("aria-pressed", "true");
+        try {
+          if (!("DeviceOrientationEvent" in window)) return;
+          if (typeof DeviceOrientationEvent.requestPermission === "function") {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission !== "granted") return;
+          }
+          window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
+          phoneMotionAvailable = true;
+        } catch (error) {
+          console.warn("Phone orientation is unavailable; Y-axis spin remains enabled.", error);
+        }
+      }
+
+      motionButton.addEventListener("click", () => {
+        if (motionEnabled && !phoneMotionAvailable && "DeviceOrientationEvent" in window) {
+          enableMotion();
+        } else if (motionEnabled) {
+          window.removeEventListener("deviceorientation", onDeviceOrientation);
+          motionEnabled = false;
+          phoneMotionAvailable = false;
+          motionOrigin = null;
+          motionButton.textContent = "Motion off";
+          motionButton.setAttribute("aria-pressed", "false");
+          modelOrientation.quaternion.identity();
+        } else {
+          enableMotion();
+        }
+      });
+
+      resetButton.addEventListener("click", () => {
+        specimenRotationX = 0;
+        specimenRotationY = 0;
+        specimen.rotation.set(0, 0, 0, "YZX");
+        modelOrientation.quaternion.identity();
+        cutDragOffset = 0;
+        controls.target.copy(initialTarget);
+        camera.position.copy(initialCamera);
+        controls.update();
+        motionOrigin = null;
+      });
+
+      window.addEventListener("resize", resize);
+
+      new GLTFLoader().load(
+        MODEL_URL,
+        (gltf) => {
+          try {
+            loadModel(gltf);
+          } catch (error) {
+            console.error("Could not display the model:", error);
+            setStatus(`Could not display the model: ${error.message}`, true);
+          }
+        },
+        (event) => {
+          if (event.total) setStatus(`Loading model… ${Math.round((event.loaded / event.total) * 100)}%`);
+        },
+        (error) => {
+          console.error("Could not load the GLB:", error);
+          setStatus(`Could not load the model: ${error.message || "check that the GLB is beside index.html."}`, true);
+        }
+      );
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const now = performance.now();
+        const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
+        lastFrameTime = now;
+        if (motionEnabled) {
+          specimenRotationY += delta * 0.65;
+          specimen.rotation.set(specimenRotationX, specimenRotationY, 0, "YZX");
+        }
+        if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
+          applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
+          angularVelocity.x *= Math.exp(-HORIZONTAL_INERTIA_DAMPING * delta);
+          angularVelocity.y *= Math.exp(-VERTICAL_INERTIA_DAMPING * delta);
+        }
+        controls.update();
+        updateCutPlane();
+        renderer.render(scene, camera);
+      }
+      resize();
+      animate();
+    </script>
+  </body>
+</html>
