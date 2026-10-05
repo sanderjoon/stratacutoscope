@@ -132,6 +132,9 @@
       const CUT_DRAG_SCREEN_TRAVEL = 1.5;
       const DRAG_ROTATION_SENSITIVITY = 0.008;
       const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
+      const GYROSCOPE_HORIZONTAL_SENSITIVITY = 4.5;
+      const GYROSCOPE_VERTICAL_SENSITIVITY = 3;
+      const GYROSCOPE_VERTICAL_DEADZONE = 0.12;
       const HORIZONTAL_INERTIA_DAMPING = 1.1;
       const VERTICAL_INERTIA_DAMPING = 4;
       const status = document.querySelector("#status");
@@ -215,6 +218,10 @@
       const viewDirection = new THREE.Vector3(1, 0, 0);
       const cameraDirection = new THREE.Vector3();
       const cameraOffset = new THREE.Vector3();
+      const gyroscopeRight = new THREE.Vector3();
+      const gyroscopeYaw = new THREE.Quaternion();
+      const gyroscopePitch = new THREE.Quaternion();
+      const worldUp = new THREE.Vector3(0, 1, 0);
       const panOffset = new THREE.Vector3();
       const panRight = new THREE.Vector3();
       const panUp = new THREE.Vector3();
@@ -223,9 +230,7 @@
       const planeNormal = new THREE.Vector3(0, 0, 1);
       const capGeometry = new THREE.PlaneGeometry(1, 1);
       const cameraDirectionForFit = new THREE.Vector3();
-      const previousOrientationInverse = new THREE.Quaternion();
-      const deviceOrientationDelta = new THREE.Quaternion();
-      const baseOrientationDelta = new THREE.Quaternion();
+      const gyroscopePitchAxis = new THREE.Vector3(1, 0, 0);
       let previousPointerTime = 0;
 
       function setStatus(message, isError = false) {
@@ -532,37 +537,51 @@
         setStatus("");
       }
 
-      const orientationEuler = new THREE.Euler();
-      const orientationQuaternion = new THREE.Quaternion();
-      const screenQuaternion = new THREE.Quaternion();
-      const axisZ = new THREE.Vector3(0, 0, 1);
       const degree = Math.PI / 180;
+
+      function angleDelta(current, previous) {
+        return THREE.MathUtils.euclideanModulo(current - previous + 180, 360) - 180;
+      }
 
       function onDeviceOrientation(event) {
         if (event.alpha === null || event.beta === null || event.gamma === null) return;
-        orientationEuler.set(
-          event.beta * degree,
-          event.alpha * degree,
-          -event.gamma * degree,
-          "YXZ"
-        );
-        orientationQuaternion.setFromEuler(orientationEuler);
-        const screenAngle = (screen.orientation?.angle ?? 0) * degree;
-        screenQuaternion.setFromAxisAngle(axisZ, -screenAngle);
-        orientationQuaternion.multiply(screenQuaternion);
+        const screenAngle = screen.orientation?.angle ?? 0;
+        if (previousDeviceOrientation && previousDeviceOrientation.screenAngle !== screenAngle) {
+          previousDeviceOrientation = null;
+        }
 
         if (!previousDeviceOrientation) {
-          previousDeviceOrientation = orientationQuaternion.clone();
+          previousDeviceOrientation = {
+            alpha: event.alpha,
+            beta: event.beta,
+            gamma: event.gamma,
+            screenAngle
+          };
           return;
         }
-        previousOrientationInverse.copy(previousDeviceOrientation).invert();
-        deviceOrientationDelta.copy(orientationQuaternion).multiply(previousOrientationInverse);
-        baseOrientationDelta.copy(deviceOrientationDelta);
-        deviceOrientationDelta.multiply(baseOrientationDelta).multiply(baseOrientationDelta);
-        cameraOffset.copy(camera.position).sub(controls.target).applyQuaternion(deviceOrientationDelta);
+
+        const horizontalAngle = angleDelta(event.alpha, previousDeviceOrientation.alpha) *
+          degree * GYROSCOPE_HORIZONTAL_SENSITIVITY;
+        const screenRotation = screenAngle * degree;
+        let verticalDelta = angleDelta(event.beta, previousDeviceOrientation.beta) * Math.cos(screenRotation) +
+          angleDelta(event.gamma, previousDeviceOrientation.gamma) * Math.sin(screenRotation);
+        if (Math.abs(verticalDelta) < GYROSCOPE_VERTICAL_DEADZONE) verticalDelta = 0;
+        const verticalAngle = verticalDelta * degree * GYROSCOPE_VERTICAL_SENSITIVITY;
+
+        cameraOffset.copy(camera.position).sub(controls.target);
+        gyroscopeYaw.setFromAxisAngle(worldUp, -horizontalAngle);
+        cameraOffset.applyQuaternion(gyroscopeYaw);
+        gyroscopeRight.copy(gyroscopePitchAxis)
+          .applyQuaternion(camera.quaternion)
+          .applyQuaternion(gyroscopeYaw)
+          .normalize();
+        gyroscopePitch.setFromAxisAngle(gyroscopeRight, -verticalAngle);
+        cameraOffset.applyQuaternion(gyroscopePitch);
         camera.position.copy(controls.target).add(cameraOffset);
         camera.lookAt(controls.target);
-        previousDeviceOrientation.copy(orientationQuaternion);
+        previousDeviceOrientation.alpha = event.alpha;
+        previousDeviceOrientation.beta = event.beta;
+        previousDeviceOrientation.gamma = event.gamma;
       }
 
       async function enableGyroscope() {
