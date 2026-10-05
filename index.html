@@ -194,13 +194,17 @@
       let fitDistance = 4;
       let fitCameraDistance = 0;
       let cutDragOffset = 0;
-      let previousTwoFingerCenterY = null;
-      let previousTwoFingerTime = 0;
+      let previousTwoFingerCenter = null;
       let previousThreeFingerCenterY = null;
       const activePointers = new Map();
       const angularVelocity = new THREE.Vector2();
       let specimenPitch = 0;
       let specimenYaw = 0;
+      const pitchRotation = new THREE.Quaternion();
+      const yawRotation = new THREE.Quaternion();
+      const specimenRotation = new THREE.Quaternion();
+      const worldZAxis = new THREE.Vector3(0, 0, 1);
+      const localYAxis = new THREE.Vector3(0, 1, 0);
       const modelBounds = new THREE.Box3();
       let initialCamera;
       let initialTarget;
@@ -211,6 +215,9 @@
       const viewDirection = new THREE.Vector3(1, 0, 0);
       const cameraDirection = new THREE.Vector3();
       const cameraOffset = new THREE.Vector3();
+      const panOffset = new THREE.Vector3();
+      const panRight = new THREE.Vector3();
+      const panUp = new THREE.Vector3();
       const cutPoint = new THREE.Vector3();
       const cutPlane = new THREE.Plane();
       const planeNormal = new THREE.Vector3(0, 0, 1);
@@ -295,7 +302,14 @@
       function applyDragRotation(horizontalAngle, verticalAngle) {
         specimenYaw -= horizontalAngle;
         specimenPitch -= verticalAngle;
-        specimen.rotation.set(specimenPitch, specimenYaw, 0, "YXZ");
+        updateSpecimenRotation();
+      }
+
+      function updateSpecimenRotation() {
+        pitchRotation.setFromAxisAngle(worldZAxis, specimenPitch);
+        yawRotation.setFromAxisAngle(localYAxis, specimenYaw);
+        specimenRotation.copy(pitchRotation).multiply(yawRotation);
+        specimen.quaternion.copy(specimenRotation);
       }
 
       canvas.addEventListener("pointerdown", (event) => {
@@ -334,10 +348,12 @@
       canvas.addEventListener("pointercancel", finishPointer);
 
       canvas.addEventListener("touchstart", (event) => {
-        previousTwoFingerCenterY = event.touches.length === 2
-          ? (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+        previousTwoFingerCenter = event.touches.length === 2
+          ? {
+              x: (event.touches[0].clientX + event.touches[1].clientX) * 0.5,
+              y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+            }
           : null;
-        previousTwoFingerTime = event.timeStamp;
         previousThreeFingerCenterY = event.touches.length === 3
           ? (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3
           : null;
@@ -345,21 +361,24 @@
 
       canvas.addEventListener("touchmove", (event) => {
         if (event.touches.length === 2) {
-          const centerY = (event.touches[0].clientY + event.touches[1].clientY) * 0.5;
-          if (previousTwoFingerCenterY !== null) {
-            const elapsed = Math.max((event.timeStamp - previousTwoFingerTime) / 1000, 1 / 120);
-            const verticalAngle = (centerY - previousTwoFingerCenterY) *
-              VERTICAL_DRAG_ROTATION_SENSITIVITY;
-            applyDragRotation(0, verticalAngle);
-            angularVelocity.set(
-              0,
-              THREE.MathUtils.clamp(verticalAngle / elapsed, -12, 12)
-            );
+          const center = {
+            x: (event.touches[0].clientX + event.touches[1].clientX) * 0.5,
+            y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+          };
+          if (previousTwoFingerCenter && canvas.clientHeight > 0) {
+            const unitsPerPixel = 2 * camera.position.distanceTo(controls.target) *
+              Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) / canvas.clientHeight;
+            panRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+            panUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+            panOffset.copy(panRight).multiplyScalar(
+              -(center.x - previousTwoFingerCenter.x) * unitsPerPixel
+            ).addScaledVector(panUp, (center.y - previousTwoFingerCenter.y) * unitsPerPixel);
+            camera.position.add(panOffset);
+            controls.target.add(panOffset);
           }
-          previousTwoFingerCenterY = centerY;
-          previousTwoFingerTime = event.timeStamp;
+          previousTwoFingerCenter = center;
         } else {
-          previousTwoFingerCenterY = null;
+          previousTwoFingerCenter = null;
         }
         if (event.touches.length !== 3) {
           previousThreeFingerCenterY = null;
@@ -374,7 +393,7 @@
       }, { passive: true });
 
       canvas.addEventListener("touchend", (event) => {
-        if (event.touches.length !== 2) previousTwoFingerCenterY = null;
+        if (event.touches.length !== 2) previousTwoFingerCenter = null;
         if (event.touches.length < 3) previousThreeFingerCenterY = null;
       }, { passive: true });
 
@@ -588,7 +607,7 @@
       resetButton.addEventListener("click", () => {
         specimenPitch = 0;
         specimenYaw = 0;
-        specimen.rotation.set(0, 0, 0, "YXZ");
+        updateSpecimenRotation();
         modelOrientation.quaternion.identity();
         cutDragOffset = 0;
         controls.target.copy(initialTarget);
@@ -625,7 +644,7 @@
         lastFrameTime = now;
         if (motionEnabled) {
           specimenYaw += delta * 0.65;
-          specimen.rotation.set(specimenPitch, specimenYaw, 0, "YXZ");
+          updateSpecimenRotation();
         }
         if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
           applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
