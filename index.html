@@ -199,11 +199,8 @@
       let previousThreeFingerCenterY = null;
       const activePointers = new Map();
       const angularVelocity = new THREE.Vector2();
-      const localHorizontalRotation = new THREE.Quaternion();
-      const localVerticalRotation = new THREE.Quaternion();
-      const localYRotation = new THREE.Quaternion();
-      const localYAxis = new THREE.Vector3(0, 1, 0);
-      const localXAxis = new THREE.Vector3(1, 0, 0);
+      let specimenPitch = 0;
+      let specimenYaw = 0;
       const modelBounds = new THREE.Box3();
       let initialCamera;
       let initialTarget;
@@ -296,12 +293,9 @@
       }
 
       function applyDragRotation(horizontalAngle, verticalAngle) {
-        localHorizontalRotation.setFromAxisAngle(localYAxis, -horizontalAngle);
-        localVerticalRotation.setFromAxisAngle(localXAxis, -verticalAngle);
-        specimen.quaternion
-          .multiply(localHorizontalRotation)
-          .multiply(localVerticalRotation)
-          .normalize();
+        specimenYaw -= horizontalAngle;
+        specimenPitch -= verticalAngle;
+        specimen.rotation.set(specimenPitch, specimenYaw, 0, "YXZ");
       }
 
       canvas.addEventListener("pointerdown", (event) => {
@@ -592,7 +586,9 @@
       });
 
       resetButton.addEventListener("click", () => {
-        specimen.quaternion.identity();
+        specimenPitch = 0;
+        specimenYaw = 0;
+        specimen.rotation.set(0, 0, 0, "YXZ");
         modelOrientation.quaternion.identity();
         cutDragOffset = 0;
         controls.target.copy(initialTarget);
@@ -628,9 +624,8 @@
         const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
         lastFrameTime = now;
         if (motionEnabled) {
-          specimen.quaternion.multiply(
-            localYRotation.setFromAxisAngle(localYAxis, delta * 0.65)
-          ).normalize();
+          specimenYaw += delta * 0.65;
+          specimen.rotation.set(specimenPitch, specimenYaw, 0, "YXZ");
         }
         if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
           applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
