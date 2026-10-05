@@ -221,6 +221,7 @@
       const cameraDirectionForFit = new THREE.Vector3();
       const previousOrientationInverse = new THREE.Quaternion();
       const deviceOrientationDelta = new THREE.Quaternion();
+      const baseOrientationDelta = new THREE.Quaternion();
       let previousPointerTime = 0;
 
       function setStatus(message, isError = false) {
@@ -543,6 +544,8 @@
         }
         previousOrientationInverse.copy(previousDeviceOrientation).invert();
         deviceOrientationDelta.copy(orientationQuaternion).multiply(previousOrientationInverse);
+        baseOrientationDelta.copy(deviceOrientationDelta);
+        deviceOrientationDelta.multiply(baseOrientationDelta).multiply(baseOrientationDelta);
         cameraOffset.copy(camera.position).sub(controls.target).applyQuaternion(deviceOrientationDelta);
         camera.position.copy(controls.target).add(cameraOffset);
         camera.lookAt(controls.target);
