@@ -117,6 +117,7 @@
       <footer class="footer">
         <div class="actions">
           <button id="motion" type="button" aria-pressed="true">Motion on</button>
+          <button id="gyroscope" type="button" aria-pressed="false" hidden>Gyroscope off</button>
           <button id="reset" type="button" disabled>Reset</button>
         </div>
       </footer>
@@ -135,8 +136,12 @@
       const VERTICAL_INERTIA_DAMPING = 4;
       const status = document.querySelector("#status");
       const motionButton = document.querySelector("#motion");
+      const gyroscopeButton = document.querySelector("#gyroscope");
       const resetButton = document.querySelector("#reset");
       const canvas = document.querySelector("#scene");
+      const isTouchDevice = navigator.maxTouchPoints > 0 ||
+        window.matchMedia("(pointer: coarse)").matches;
+      gyroscopeButton.hidden = !isTouchDevice || !("DeviceOrientationEvent" in window);
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color("#0d9d36");
@@ -200,7 +205,7 @@
       let initialTarget;
       let motionEnabled = true;
       let previousDeviceOrientation = null;
-      let phoneMotionAvailable = false;
+      let gyroscopeEnabled = false;
       let lastFrameTime = 0;
       const viewDirection = new THREE.Vector3(1, 0, 0);
       const cameraDirection = new THREE.Vector3();
@@ -537,37 +542,42 @@
         previousDeviceOrientation.copy(orientationQuaternion);
       }
 
-      async function enableMotion() {
-        motionEnabled = true;
+      async function enableGyroscope() {
         previousDeviceOrientation = null;
-        motionButton.textContent = "Motion on";
-        motionButton.setAttribute("aria-pressed", "true");
         try {
-          if (!("DeviceOrientationEvent" in window)) return;
           if (typeof DeviceOrientationEvent.requestPermission === "function") {
             const permission = await DeviceOrientationEvent.requestPermission();
-            if (permission !== "granted") return;
+            if (permission !== "granted") {
+              setStatus("Gyroscope permission was not granted.");
+              return;
+            }
           }
           window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
-          phoneMotionAvailable = true;
+          gyroscopeEnabled = true;
+          gyroscopeButton.textContent = "Gyroscope on";
+          gyroscopeButton.setAttribute("aria-pressed", "true");
+          setStatus("");
         } catch (error) {
-          console.warn("Phone orientation is unavailable; Y-axis spin remains enabled.", error);
+          console.warn("Could not enable phone gyroscope:", error);
+          setStatus("Could not enable the gyroscope. Check browser permission settings.");
         }
       }
 
       motionButton.addEventListener("click", () => {
-        if (motionEnabled && !phoneMotionAvailable && "DeviceOrientationEvent" in window) {
-          enableMotion();
-        } else if (motionEnabled) {
+        motionEnabled = !motionEnabled;
+        motionButton.textContent = motionEnabled ? "Motion on" : "Motion off";
+        motionButton.setAttribute("aria-pressed", String(motionEnabled));
+      });
+
+      gyroscopeButton.addEventListener("click", () => {
+        if (gyroscopeEnabled) {
           window.removeEventListener("deviceorientation", onDeviceOrientation);
-          motionEnabled = false;
-          phoneMotionAvailable = false;
+          gyroscopeEnabled = false;
           previousDeviceOrientation = null;
-          motionButton.textContent = "Motion off";
-          motionButton.setAttribute("aria-pressed", "false");
-          modelOrientation.quaternion.identity();
+          gyroscopeButton.textContent = "Gyroscope off";
+          gyroscopeButton.setAttribute("aria-pressed", "false");
         } else {
-          enableMotion();
+          enableGyroscope();
         }
       });
 
