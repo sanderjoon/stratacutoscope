@@ -259,16 +259,16 @@
       renderer.toneMappingExposure = 1.12;
       renderer.localClippingEnabled = true;
 
-      const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0.95);
+      const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0);
       ambient.position.set(0, 0, 1);
-      scene.add(ambient);
-      const keyLight = new THREE.DirectionalLight(0xfff3e3, 0.7);
+      //scene.add(ambient);
+      const keyLight = new THREE.DirectionalLight(0xfff3e3, 1.7);
       keyLight.position.set(-3.5, 5, 6);
       scene.add(keyLight);
-      const fillLight = new THREE.DirectionalLight(0xdce5ef, 4.8);
+      const fillLight = new THREE.DirectionalLight(0xdce5ef, 0.8);
       fillLight.position.set(4, 1.5, -4);
       scene.add(fillLight);
-      const capFillLight = new THREE.DirectionalLight(0xffffff, 2.3);
+      const capFillLight = new THREE.DirectionalLight(0xffffff, 2.5);
       capFillLight.layers.set(1);
       scene.add(capFillLight);
       scene.add(capFillLight.target);
