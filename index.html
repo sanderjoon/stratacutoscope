@@ -61,26 +61,39 @@
         position: absolute;
         z-index: 3;
         inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 32px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        overflow-y: auto;
+        padding: max(16px, env(safe-area-inset-top)) 16px
+          max(16px, env(safe-area-inset-bottom));
         color: white;
         background: rgb(0 0 0 / 50%);
         cursor: pointer;
         touch-action: manipulation;
+        overscroll-behavior: contain;
       }
 
       .about-overlay[hidden] { display: none; }
 
       .about-content {
         width: min(100%, 640px);
+        margin: auto;
         font-size: 16px;
-        line-height: 1.6;
+        line-height: 1.4;
         text-align: center;
       }
 
-      .about-content p { margin: 0 0 1em; }
+      .about-content img {
+        display: inline-block;
+        max-width: 100%;
+        max-height: 18dvh;
+        object-fit: contain;
+      }
+
+      .about-content p { margin: 0 0 0.65em; }
       .about-content p:last-child { margin-bottom: 0; }
+      .about-content small { font-size: inherit; }
 
       .model-navigation {
         position: absolute;
@@ -133,6 +146,15 @@
           top: max(10px, env(safe-area-inset-top));
           right: max(12px, env(safe-area-inset-right));
         }
+
+        .about-overlay {
+          padding-right: 12px;
+          padding-left: 12px;
+        }
+
+        .about-content { line-height: 1.25; }
+        .about-content img { max-height: 12dvh; }
+        .about-content p { margin-bottom: 0.35em; }
 
         .model-navigation {
           bottom: max(14px, env(safe-area-inset-bottom));
@@ -201,7 +223,7 @@
       const CUT_DRAG_SCREEN_TRAVEL = 1.5;
       const DRAG_ROTATION_SENSITIVITY = 0.008;
       const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
-      const GYROSCOPE_Y_SENSITIVITY = 1.5;
+      const GYROSCOPE_Y_SENSITIVITY = 10;
       const HORIZONTAL_INERTIA_DAMPING = 1.1;
       const VERTICAL_INERTIA_DAMPING = 4;
       const status = document.querySelector("#status");
