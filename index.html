@@ -14,7 +14,7 @@
         -webkit-font-smoothing: antialiased;
         --ink: #242522;
         --muted: #74736e;
-        --paper: #0d9d36;
+        --paper: #e9e5dd;
       }
 
       * { box-sizing: border-box; }
@@ -47,17 +47,26 @@
       .footer {
         position: absolute;
         z-index: 1;
+        top: max(16px, env(safe-area-inset-top));
         right: max(24px, env(safe-area-inset-right));
-        left: max(24px, env(safe-area-inset-left));
         display: flex;
         justify-content: flex-end;
         align-items: center;
         pointer-events: auto;
       }
 
-      .footer { bottom: max(20px, env(safe-area-inset-bottom)); }
-
       .actions { display: flex; gap: 8px; }
+
+      .model-navigation {
+        position: absolute;
+        z-index: 1;
+        bottom: max(20px, env(safe-area-inset-bottom));
+        left: 50%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transform: translateX(-50%);
+      }
 
       button {
         min-height: 42px;
@@ -96,8 +105,13 @@
 
       @media (max-width: 600px) {
         .footer {
-          right: max(18px, env(safe-area-inset-right));
-          left: max(18px, env(safe-area-inset-left));
+          top: max(10px, env(safe-area-inset-top));
+          right: max(12px, env(safe-area-inset-right));
+        }
+
+        .model-navigation {
+          bottom: max(14px, env(safe-area-inset-bottom));
+          gap: 2px;
         }
       }
     </style>
@@ -111,36 +125,54 @@
     </script>
   </head>
   <body>
-    <main class="viewer" aria-label="Interactive 3D hand specimen">
+    <main class="viewer" aria-label="Interactive 3D model viewer">
       <canvas id="scene" aria-label="3D model. Drag to rotate."></canvas>
       <div class="status" id="status" role="status" aria-live="polite">Loading model…</div>
-      <footer class="footer">
+      <div class="footer">
         <div class="actions">
           <button id="motion" type="button" aria-pressed="true">Motion on</button>
-          <button id="gyroscope" type="button" aria-pressed="false" hidden>Gyroscope off</button>
+          <button id="gyroscope" type="button" aria-pressed="false" aria-label="Toggle gyroscope rotation and accelerometer zoom" hidden>Gyroscope off</button>
           <button id="reset" type="button" disabled>Reset</button>
         </div>
-      </footer>
+      </div>
+      <nav class="model-navigation" aria-label="Model selection">
+        <button id="previous-model" type="button" disabled>&lt; Prev</button>
+        <button id="random-model" type="button" aria-label="Random model" disabled>?</button>
+        <button id="next-model" type="button" disabled>Next &gt;</button>
+      </nav>
     </main>
 
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-      const MODEL_URL = "./20261003_HandFront_glb_v0002.glb";
+      const MODELS = [
+        {
+          name: "Horse",
+          url: "./20261008_Horse_glb_v0001.glb",
+          backgroundColor: "#760DD9"
+        },
+        {
+          name: "Handshake",
+          url: "./20261003_HandFront_glb_v0002.glb",
+          backgroundColor: "#0d9d36"
+        }
+      ];
       const CUT_ZOOM_SENSITIVITY = 0.4;
       const CUT_DRAG_SCREEN_TRAVEL = 1.5;
       const DRAG_ROTATION_SENSITIVITY = 0.008;
       const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
       const GYROSCOPE_HORIZONTAL_SENSITIVITY = 4.5;
-      const GYROSCOPE_VERTICAL_SENSITIVITY = 3;
-      const GYROSCOPE_VERTICAL_DEADZONE = 0.12;
       const HORIZONTAL_INERTIA_DAMPING = 1.1;
       const VERTICAL_INERTIA_DAMPING = 4;
       const status = document.querySelector("#status");
       const motionButton = document.querySelector("#motion");
       const gyroscopeButton = document.querySelector("#gyroscope");
       const resetButton = document.querySelector("#reset");
+      const previousModelButton = document.querySelector("#previous-model");
+      const randomModelButton = document.querySelector("#random-model");
+      const nextModelButton = document.querySelector("#next-model");
+      const themeColorMeta = document.querySelector('meta[name="theme-color"]');
       const canvas = document.querySelector("#scene");
       const isTouchDevice = navigator.maxTouchPoints > 0 ||
         window.matchMedia("(pointer: coarse)").matches;
@@ -211,9 +243,13 @@
       const modelBounds = new THREE.Box3();
       let initialCamera;
       let initialTarget;
+      let currentModelIndex = -1;
+      let modelLoading = false;
       let motionEnabled = true;
       let previousDeviceOrientation = null;
       let gyroscopeEnabled = false;
+      let accelerometerBaselineY = null;
+      let accelerometerY = null;
       let lastFrameTime = 0;
       const viewDirection = new THREE.Vector3(1, 0, 0);
       const cameraDirection = new THREE.Vector3();
@@ -226,11 +262,41 @@
       const capGeometry = new THREE.PlaneGeometry(1, 1);
       const cameraDirectionForFit = new THREE.Vector3();
       let previousPointerTime = 0;
+      const modelLoader = new GLTFLoader();
 
       function setStatus(message, isError = false) {
         status.textContent = message;
         status.dataset.error = String(isError);
         status.hidden = !message;
+      }
+
+      function setModelNavigationDisabled(disabled) {
+        previousModelButton.disabled = disabled;
+        randomModelButton.disabled = disabled;
+        nextModelButton.disabled = disabled;
+      }
+
+      function disposeGroupContents(group, disposeGeometry) {
+        const geometries = new Set();
+        const materials = new Set();
+        const textures = new Set();
+        group.traverse((object) => {
+          if (object.geometry && disposeGeometry) geometries.add(object.geometry);
+          if (object.material) {
+            for (const material of Array.isArray(object.material)
+              ? object.material
+              : [object.material]) {
+              materials.add(material);
+              for (const value of Object.values(material)) {
+                if (value?.isTexture) textures.add(value);
+              }
+            }
+          }
+        });
+        for (const child of [...group.children]) group.remove(child);
+        for (const geometry of geometries) geometry.dispose();
+        for (const material of materials) material.dispose();
+        for (const texture of textures) texture.dispose();
       }
 
       function resize() {
@@ -475,6 +541,16 @@
         });
         if (!meshes.length) throw new Error("The GLB contains no mesh to display.");
 
+        disposeGroupContents(modelOrientation, true);
+        disposeGroupContents(capGroup, false);
+        specimenPitch = 0;
+        specimenYaw = 0;
+        updateSpecimenRotation();
+        modelOrientation.quaternion.identity();
+        cutDragOffset = 0;
+        controls.target.set(0, 0, 0);
+        camera.position.copy(viewDirection);
+
         for (const [index, mesh] of meshes.entries()) {
           const geometry = mesh.geometry.clone();
           const attributeColor = geometry.getAttribute("color_3");
@@ -538,7 +614,7 @@
       }
 
       function onDeviceOrientation(event) {
-        if (event.alpha === null || event.beta === null || event.gamma === null) return;
+        if (event.alpha === null) return;
         const screenAngle = screen.orientation?.angle ?? 0;
         if (previousDeviceOrientation && previousDeviceOrientation.screenAngle !== screenAngle) {
           previousDeviceOrientation = null;
@@ -547,8 +623,6 @@
         if (!previousDeviceOrientation) {
           previousDeviceOrientation = {
             alpha: event.alpha,
-            beta: event.beta,
-            gamma: event.gamma,
             screenAngle
           };
           return;
@@ -556,37 +630,103 @@
 
         const horizontalAngle = angleDelta(event.alpha, previousDeviceOrientation.alpha) *
           degree * GYROSCOPE_HORIZONTAL_SENSITIVITY;
-        const screenRotation = screenAngle * degree;
-        let verticalDelta = angleDelta(event.beta, previousDeviceOrientation.beta) * Math.cos(screenRotation) +
-          angleDelta(event.gamma, previousDeviceOrientation.gamma) * Math.sin(screenRotation);
-        if (Math.abs(verticalDelta) < GYROSCOPE_VERTICAL_DEADZONE) verticalDelta = 0;
-        const verticalAngle = verticalDelta * degree * GYROSCOPE_VERTICAL_SENSITIVITY;
-
-        applyDragRotation(horizontalAngle, verticalAngle);
+        applyDragRotation(horizontalAngle, 0);
         previousDeviceOrientation.alpha = event.alpha;
-        previousDeviceOrientation.beta = event.beta;
-        previousDeviceOrientation.gamma = event.gamma;
+      }
+
+      function onDeviceMotion(event) {
+        const acceleration = event.accelerationIncludingGravity?.y;
+        if (acceleration === null || acceleration === undefined) return;
+        if (accelerometerBaselineY === null) {
+          accelerometerBaselineY = acceleration;
+        }
+        accelerometerY = acceleration;
       }
 
       async function enableGyroscope() {
         previousDeviceOrientation = null;
         try {
-          if (typeof DeviceOrientationEvent.requestPermission === "function") {
-            const permission = await DeviceOrientationEvent.requestPermission();
-            if (permission !== "granted") {
-              setStatus("Gyroscope permission was not granted.");
-              return;
-            }
+          const orientationPermission = typeof DeviceOrientationEvent.requestPermission === "function"
+            ? DeviceOrientationEvent.requestPermission()
+            : Promise.resolve("granted");
+          const motionPermission = typeof DeviceMotionEvent !== "undefined" &&
+              typeof DeviceMotionEvent.requestPermission === "function"
+            ? DeviceMotionEvent.requestPermission()
+            : Promise.resolve("granted");
+          const [orientationResult, motionResult] = await Promise.all([
+            orientationPermission,
+            motionPermission
+          ]);
+          if (orientationResult !== "granted") {
+            setStatus("Gyroscope permission was not granted.");
+            return;
+          }
+          const accelerometerAvailable = "DeviceMotionEvent" in window &&
+            motionResult === "granted";
+          if (!accelerometerAvailable) {
+            setStatus("Accelerometer unavailable; gyroscope rotation is still available.");
           }
           window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
+          if (accelerometerAvailable) {
+            window.addEventListener("devicemotion", onDeviceMotion, { passive: true });
+          }
           gyroscopeEnabled = true;
           gyroscopeButton.textContent = "Gyroscope on";
           gyroscopeButton.setAttribute("aria-pressed", "true");
-          setStatus("");
+          if (accelerometerAvailable) {
+            setStatus("");
+          }
         } catch (error) {
           console.warn("Could not enable phone gyroscope:", error);
-          setStatus("Could not enable the gyroscope. Check browser permission settings.");
+          setStatus("Could not enable motion sensors. Check browser permission settings.");
         }
+      }
+
+      function changeModel(index) {
+        if (modelLoading || index < 0 || index >= MODELS.length) return;
+        modelLoading = true;
+        setModelNavigationDisabled(true);
+        setStatus(`Loading ${MODELS[index].name}…`);
+        modelLoader.load(
+          MODELS[index].url,
+          (gltf) => {
+            try {
+              loadModel(gltf);
+              currentModelIndex = index;
+              scene.background = new THREE.Color(MODELS[index].backgroundColor);
+              document.body.style.backgroundColor = MODELS[index].backgroundColor;
+              themeColorMeta.content = MODELS[index].backgroundColor;
+            } catch (error) {
+              console.error("Could not display the model:", error);
+              setStatus(`Could not display the model: ${error.message}`, true);
+            } finally {
+              modelLoading = false;
+              setModelNavigationDisabled(false);
+            }
+          },
+          (event) => {
+            if (event.total) {
+              setStatus(`Loading ${MODELS[index].name}… ${Math.round((event.loaded / event.total) * 100)}%`);
+            }
+          },
+          (error) => {
+            console.error("Could not load the model:", error);
+            setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
+            modelLoading = false;
+            setModelNavigationDisabled(false);
+          }
+        );
+      }
+
+      function stopGyroscope() {
+        window.removeEventListener("deviceorientation", onDeviceOrientation);
+        window.removeEventListener("devicemotion", onDeviceMotion);
+        gyroscopeEnabled = false;
+        previousDeviceOrientation = null;
+        accelerometerBaselineY = null;
+        accelerometerY = null;
+        gyroscopeButton.textContent = "Gyroscope off";
+        gyroscopeButton.setAttribute("aria-pressed", "false");
       }
 
       motionButton.addEventListener("click", () => {
@@ -597,14 +737,23 @@
 
       gyroscopeButton.addEventListener("click", () => {
         if (gyroscopeEnabled) {
-          window.removeEventListener("deviceorientation", onDeviceOrientation);
-          gyroscopeEnabled = false;
-          previousDeviceOrientation = null;
-          gyroscopeButton.textContent = "Gyroscope off";
-          gyroscopeButton.setAttribute("aria-pressed", "false");
+          stopGyroscope();
         } else {
           enableGyroscope();
         }
+      });
+
+      previousModelButton.addEventListener("click", () => {
+        const index = (currentModelIndex - 1 + MODELS.length) % MODELS.length;
+        changeModel(index);
+      });
+      nextModelButton.addEventListener("click", () => {
+        const index = (currentModelIndex + 1) % MODELS.length;
+        changeModel(index);
+      });
+      randomModelButton.addEventListener("click", () => {
+        const offset = Math.floor(Math.random() * (MODELS.length - 1)) + 1;
+        changeModel((currentModelIndex + offset) % MODELS.length);
       });
 
       resetButton.addEventListener("click", () => {
@@ -617,28 +766,13 @@
         camera.position.copy(initialCamera);
         controls.update();
         previousDeviceOrientation = null;
+        accelerometerBaselineY = null;
+        accelerometerY = null;
       });
 
       window.addEventListener("resize", resize);
 
-      new GLTFLoader().load(
-        MODEL_URL,
-        (gltf) => {
-          try {
-            loadModel(gltf);
-          } catch (error) {
-            console.error("Could not display the model:", error);
-            setStatus(`Could not display the model: ${error.message}`, true);
-          }
-        },
-        (event) => {
-          if (event.total) setStatus(`Loading model… ${Math.round((event.loaded / event.total) * 100)}%`);
-        },
-        (error) => {
-          console.error("Could not load the GLB:", error);
-          setStatus(`Could not load the model: ${error.message || "check that the GLB is beside index.html."}`, true);
-        }
-      );
+      changeModel(0);
 
       function animate() {
         requestAnimationFrame(animate);
@@ -648,6 +782,21 @@
         if (motionEnabled) {
           specimenYaw += delta * 0.65;
           updateSpecimenRotation();
+        }
+        if (gyroscopeEnabled && accelerometerY !== null && accelerometerBaselineY !== null) {
+          let accelerationDelta = accelerometerY - accelerometerBaselineY;
+          if (Math.abs(accelerationDelta) < 0.45) accelerationDelta = 0;
+          const zoomSpeed = THREE.MathUtils.clamp(-accelerationDelta * 0.22, -2.5, 2.5);
+          if (zoomSpeed !== 0) {
+            cameraDirection.copy(camera.position).sub(controls.target).normalize();
+            camera.position.addScaledVector(cameraDirection, zoomSpeed * delta);
+            const distance = THREE.MathUtils.clamp(
+              camera.position.distanceTo(controls.target),
+              controls.minDistance,
+              controls.maxDistance
+            );
+            camera.position.copy(controls.target).addScaledVector(cameraDirection, distance);
+          }
         }
         if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
           applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
