@@ -191,7 +191,7 @@
           <p><b>Motion On</b> for auto-rotation<br/><b>Reset</b> to get back to front view</p>
           <p>Use <b>Previous</b>, <b>Next</b>, or <b>?</b> button for a random model.</p>
           <p>Enable <b>Gyroscope</b> to rotate with phone.</p>
-          <p><small style="opacity: 50%; font-style: italic;">Disclaimer: This stratacut playback prototype is made with LLMs. I know - it's wasteful and shameful, but I'm nowhere near with my programming skills to create a realtime boolean cut 3D rendering app. Please reach out to <b>sander.joon@gmail.com</b> if you can help me make a proper, texturable, and scalable human-made Stratacutoscope!</small></p>
+          <p><small style="opacity: 50%; font-style: italic;">Disclaimer: This stratacut playback prototype is made with LLMs. I know - it's wasteful and shameful, but I'm nowhere near with my programming skills to create a realtime boolean cut 3D rendering app. Please reach out to <b>sander.joon@gmail.com</b> if you can help me make a proper, texturable, and scalable human-made Stratacutoscope<i>!</i></small></p>
         </div>
       </div>
       <nav class="model-navigation" aria-label="Model selection">
@@ -737,7 +737,8 @@
           },
           (event) => {
             if (event.total) {
-              setStatus(`Loading ${MODELS[index].name}… ${Math.round((event.loaded / event.total) * 100)}%`);
+              const percent = Math.min(Math.round((event.loaded / event.total) * 100), 99);
+              setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
             }
           },
           (error) => {
