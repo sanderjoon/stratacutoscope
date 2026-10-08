@@ -156,7 +156,7 @@
       <div class="footer">
         <div class="actions">
           <button id="motion" type="button" aria-pressed="true">Motion on</button>
-          <button id="gyroscope" type="button" aria-pressed="false" aria-label="Toggle gyroscope rotation and accelerometer zoom" hidden>Gyroscope off</button>
+          <button id="gyroscope" type="button" aria-pressed="false" aria-label="Toggle gyroscope rotation" hidden>Gyroscope off</button>
           <button id="reset" type="button" disabled>Reset</button>
           <button id="about-toggle" type="button" aria-label="About this project" aria-expanded="false">?</button>
         </div>
@@ -168,8 +168,8 @@
           <p><b>Drag</b> to rotate<br><b>Pinch</b> or <b>Scroll</b> to Zoom<br><b>Drag with three fingers</b> move the cutting plane.</p>
           <p><b>Motion On</b> for auto-rotation<br/><b>Reset</b> to get back to front view</p>
           <p>Use <b>Previous</b>, <b>Next</b>, or <b>?</b> button for a random model.</p>
-          <p>Enable <b>Gyroscope</b> to rotate and zoom with a phone.</p>
-          <p><small style="opacity: 50%; font-style: italic;">Disclaimer: This playback prototype is made with LLMs. I know - it's wasteful but I really wished to get something off the ground. Please reach out to <b>sander.joon@gmail.com</b> if you can help me make a proper human-made one!</small></p>
+          <p>Enable <b>Gyroscope</b> to rotate with phone.</p>
+          <p><small style="opacity: 50%; font-style: italic;">Disclaimer: This stratacut playback prototype is made with LLMs. I know - it's wasteful and shameful, but I'm nowhere near with my programming skills to create a realtime boolean cut 3D rendering app. Please reach out to <b>sander.joon@gmail.com</b> if you can help me make a proper, texturable, and scalable human-made Stratacutoscope!</small></p>
         </div>
       </div>
       <nav class="model-navigation" aria-label="Model selection">
@@ -201,7 +201,7 @@
       const CUT_DRAG_SCREEN_TRAVEL = 1.5;
       const DRAG_ROTATION_SENSITIVITY = 0.008;
       const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
-      const GYROSCOPE_HORIZONTAL_SENSITIVITY = 1.5;
+      const GYROSCOPE_Y_SENSITIVITY = 1.5;
       const HORIZONTAL_INERTIA_DAMPING = 1.1;
       const VERTICAL_INERTIA_DAMPING = 4;
       const status = document.querySelector("#status");
@@ -289,9 +289,6 @@
       let motionEnabled = true;
       let previousDeviceOrientation = null;
       let gyroscopeEnabled = false;
-      let accelerometerBaselineY = null;
-      let accelerometerY = null;
-      let accelerometerZoomIntent = 0;
       let lastFrameTime = 0;
       const viewDirection = new THREE.Vector3(1, 0, 0);
       const cameraDirection = new THREE.Vector3();
@@ -656,80 +653,36 @@
       }
 
       function onDeviceOrientation(event) {
-        const usesCompassHeading = Number.isFinite(event.webkitCompassHeading);
-        if (!usesCompassHeading && !Number.isFinite(event.alpha)) return;
-        const screenAngle = screen.orientation?.angle ?? 0;
-        const heading = usesCompassHeading
-          ? 360 - event.webkitCompassHeading
-          : event.alpha;
-        if (previousDeviceOrientation &&
-            (previousDeviceOrientation.screenAngle !== screenAngle ||
-             previousDeviceOrientation.usesCompassHeading !== usesCompassHeading)) {
-          previousDeviceOrientation = null;
-        }
-
+        if (!Number.isFinite(event.gamma)) return;
         if (!previousDeviceOrientation) {
-          previousDeviceOrientation = {
-            heading,
-            usesCompassHeading,
-            screenAngle
-          };
+          previousDeviceOrientation = { gamma: event.gamma };
           return;
         }
 
-        const horizontalAngle = angleDelta(heading, previousDeviceOrientation.heading) *
-          degree * GYROSCOPE_HORIZONTAL_SENSITIVITY;
-        applyDragRotation(horizontalAngle, 0);
-        previousDeviceOrientation.heading = heading;
-      }
-
-      function onDeviceMotion(event) {
-        const acceleration = event.accelerationIncludingGravity?.y;
-        if (acceleration === null || acceleration === undefined) return;
-        if (accelerometerBaselineY === null) {
-          accelerometerBaselineY = acceleration;
-          accelerometerY = acceleration;
-          return;
-        }
-        accelerometerY += (acceleration - accelerometerY) * 0.2;
+        const yAxisAngle = angleDelta(event.gamma, previousDeviceOrientation.gamma) *
+          degree * GYROSCOPE_Y_SENSITIVITY;
+        applyDragRotation(yAxisAngle, 0);
+        previousDeviceOrientation.gamma = event.gamma;
       }
 
       async function enableGyroscope() {
         previousDeviceOrientation = null;
         try {
-          const orientationPermission = typeof DeviceOrientationEvent.requestPermission === "function"
-            ? DeviceOrientationEvent.requestPermission()
-            : Promise.resolve("granted");
-          const motionPermission = typeof DeviceMotionEvent !== "undefined" &&
-              typeof DeviceMotionEvent.requestPermission === "function"
-            ? DeviceMotionEvent.requestPermission()
-            : Promise.resolve("granted");
-          const [orientationResult, motionResult] = await Promise.all([
-            orientationPermission,
-            motionPermission
-          ]);
-          if (orientationResult !== "granted") {
-            setStatus("Gyroscope permission was not granted.");
-            return;
-          }
-          const accelerometerAvailable = "DeviceMotionEvent" in window &&
-            motionResult === "granted";
-          if (!accelerometerAvailable) {
-            setStatus("Accelerometer unavailable; gyroscope rotation is still available.");
+          if (typeof DeviceOrientationEvent.requestPermission === "function") {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission !== "granted") {
+              setStatus("Gyroscope permission was not granted.");
+              return;
+            }
           }
           window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
-          if (accelerometerAvailable) {
-            window.addEventListener("devicemotion", onDeviceMotion, { passive: true });
-          }
           gyroscopeEnabled = true;
           gyroscopeButton.textContent = "Gyroscope on";
           gyroscopeButton.setAttribute("aria-pressed", "true");
-          if (accelerometerAvailable) {
-            setStatus("");
-          }
+          setStatus("");
         } catch (error) {
           console.warn("Could not enable phone gyroscope:", error);
-          setStatus("Could not enable motion sensors. Check browser permission settings.");
+          setStatus("Could not enable the gyroscope. Check browser permission settings.");
         }
       }
 
@@ -776,12 +729,8 @@
 
       function stopGyroscope() {
         window.removeEventListener("deviceorientation", onDeviceOrientation);
-        window.removeEventListener("devicemotion", onDeviceMotion);
         gyroscopeEnabled = false;
         previousDeviceOrientation = null;
-        accelerometerBaselineY = null;
-        accelerometerY = null;
-        accelerometerZoomIntent = 0;
         gyroscopeButton.textContent = "Gyroscope off";
         gyroscopeButton.setAttribute("aria-pressed", "false");
       }
@@ -841,9 +790,6 @@
         camera.position.copy(initialCamera);
         controls.update();
         previousDeviceOrientation = null;
-        accelerometerBaselineY = null;
-        accelerometerY = null;
-        accelerometerZoomIntent = 0;
       });
 
       window.addEventListener("resize", resize);
@@ -867,29 +813,6 @@
         if (motionEnabled) {
           specimenYaw += delta * 0.65;
           updateSpecimenRotation();
-        }
-        if (gyroscopeEnabled && accelerometerY !== null && accelerometerBaselineY !== null) {
-          const accelerationDelta = accelerometerY - accelerometerBaselineY;
-          const deadZone = 0.7;
-          const adjustedDelta = Math.sign(accelerationDelta) *
-            Math.max(0, Math.abs(accelerationDelta) - deadZone);
-          const targetZoomIntent = THREE.MathUtils.clamp(adjustedDelta / 2, -1, 1);
-          accelerometerZoomIntent += (targetZoomIntent - accelerometerZoomIntent) *
-            (1 - Math.exp(-4 * delta));
-          if (Math.abs(accelerometerZoomIntent) > 0.01) {
-            cameraDirection.copy(camera.position).sub(controls.target).normalize();
-            const distance = camera.position.distanceTo(controls.target);
-            const minSensorDistance = fitCameraDistance * 0.65;
-            const maxSensorDistance = fitCameraDistance * 1.5;
-            const nextDistance = THREE.MathUtils.clamp(
-              distance - accelerometerZoomIntent * fitCameraDistance * 0.18 * delta,
-              minSensorDistance,
-              maxSensorDistance
-            );
-            camera.position.copy(controls.target).addScaledVector(cameraDirection, nextDistance);
-          }
-        } else {
-          accelerometerZoomIntent = 0;
         }
         if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
           applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
