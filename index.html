@@ -101,10 +101,39 @@
         bottom: max(20px, env(safe-area-inset-bottom));
         left: 50%;
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 8px;
+        gap: 0;
         transform: translateX(-50%);
       }
+
+      .model-navigation-buttons {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .model-picker { position: relative; }
+
+      .model-picker-menu {
+        position: absolute;
+        z-index: 2;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        display: flex;
+        flex-direction: column;
+        min-width: max-content;
+        padding: 4px;
+        transform: translateX(-50%);
+        border-radius: 6px;
+        background: rgb(233 229 221 / 96%);
+        box-shadow: 0 4px 18px rgb(0 0 0 / 18%);
+        backdrop-filter: blur(8px);
+      }
+
+      .model-picker-menu[hidden] { display: none; }
+      .model-picker-menu button { min-height: 36px; text-align: left; }
+      .model-picker-menu button[aria-current="true"] { font-weight: 800; }
 
       button {
         min-height: 42px;
@@ -156,9 +185,16 @@
         .about-content img { max-height: 12dvh; }
         .about-content p { margin-bottom: 0.35em; }
 
-        .model-navigation {
-          bottom: max(14px, env(safe-area-inset-bottom));
-          gap: 2px;
+        .model-navigation { bottom: max(14px, env(safe-area-inset-bottom)); }
+
+        .model-navigation-buttons { gap: 0; }
+
+        .model-navigation-buttons > button,
+        .model-picker > button {
+          padding-right: 5px;
+          padding-left: 5px;
+          font-size: 12px;
+          letter-spacing: 0.04em;
         }
       }
     </style>
@@ -186,18 +222,24 @@
       <div class="about-overlay" id="about-overlay" role="dialog" aria-modal="true" aria-label="About Stratacutoscope" tabindex="-1" hidden>
         <div style="opacity: .9;" class="about-content">
           <p><img src="./stratacutoscope.gif" /><br>
-          <p>All 3D models made by Sander Joon in Blender.</p>
+          <p>All 3D models made by <a style="color:white;" href="https://www.sanderjoon.com" target="_blank"><b>Sander Joon</b></a> in Blender.</p>
           <p><b>Drag</b> to rotate<br><b>Pinch</b> or <b>Scroll</b> to Zoom<br><b>Drag with three fingers</b> move the cutting plane.</p>
           <p><b>Motion On</b> for auto-rotation<br/><b>Reset</b> to get back to front view</p>
-          <p>Use <b>Previous</b>, <b>Next</b>, or <b>?</b> button for a random model.</p>
+          <p>Choose a model by name, or use <b>Previous</b>, <b>Next</b>, or <b>?</b> for a random model.</p>
           <p>Enable <b>Gyroscope</b> to rotate with phone.</p>
-          <p><small style="opacity: 50%; font-style: italic;">Disclaimer: This stratacut playback prototype is made with LLMs. I know - it's wasteful and shameful, but I'm nowhere near with my programming skills to create a realtime boolean cut 3D rendering app. Please reach out to <b>sander.joon@gmail.com</b> if you can help me make a proper, texturable, and scalable human-made Stratacutoscope<i>!</i></small></p>
+          <p><small style="opacity: 50%; font-style: italic;">Please reach out to <b>sander.joon@gmail.com</b> if you have any suggestions<i>!</i></small></p>
         </div>
       </div>
       <nav class="model-navigation" aria-label="Model selection">
-        <button id="previous-model" type="button" disabled>&lt; Previous</button>
-        <button id="random-model" type="button" aria-label="Random model" disabled>?</button>
-        <button id="next-model" type="button" disabled>Next &gt;</button>
+        <div class="model-picker">
+          <button id="model-picker-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="model-picker-menu" disabled>Model</button>
+          <div class="model-picker-menu" id="model-picker-menu" role="menu" aria-label="Choose a model" hidden></div>
+        </div>
+        <div class="model-navigation-buttons">
+          <button id="previous-model" type="button" disabled>&lt; Previous</button>
+          <button id="random-model" type="button" aria-label="Random model" disabled>?</button>
+          <button id="next-model" type="button" disabled>Next &gt;</button>
+        </div>
       </nav>
     </main>
 
@@ -217,6 +259,12 @@
           id: "handshake",
           url: "./20261003_HandFront_glb_v0002.glb",
           backgroundColor: "#0d9d36"
+        },
+        {
+          name: "Rotating Head",
+          id: "rotatinghead",
+          url: "./20261009_RotatingHead_glb_v0001.glb",
+          backgroundColor: "#9E4210"
         }
       ];
       const CUT_ZOOM_SENSITIVITY = 0.4;
@@ -232,6 +280,9 @@
       const resetButton = document.querySelector("#reset");
       const aboutToggleButton = document.querySelector("#about-toggle");
       const aboutOverlay = document.querySelector("#about-overlay");
+      const modelPicker = document.querySelector(".model-picker");
+      const modelPickerToggle = document.querySelector("#model-picker-toggle");
+      const modelPickerMenu = document.querySelector("#model-picker-menu");
       const previousModelButton = document.querySelector("#previous-model");
       const randomModelButton = document.querySelector("#random-model");
       const nextModelButton = document.querySelector("#next-model");
@@ -332,9 +383,60 @@
       }
 
       function setModelNavigationDisabled(disabled) {
+        modelPickerToggle.disabled = disabled;
         previousModelButton.disabled = disabled;
         randomModelButton.disabled = disabled;
         nextModelButton.disabled = disabled;
+        modelPickerMenu.querySelectorAll("button").forEach((button) => {
+          button.disabled = disabled;
+        });
+        if (disabled) closeModelPicker();
+      }
+
+      function closeModelPicker() {
+        modelPickerMenu.hidden = true;
+        modelPickerToggle.setAttribute("aria-expanded", "false");
+      }
+
+      MODELS.forEach((model, index) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.textContent = model.name;
+        option.setAttribute("role", "menuitem");
+        option.addEventListener("click", () => {
+          closeModelPicker();
+          modelPickerToggle.focus();
+          changeModel(index);
+        });
+        modelPickerMenu.append(option);
+      });
+
+      modelPickerToggle.addEventListener("click", () => {
+        const isOpening = modelPickerMenu.hidden;
+        modelPickerMenu.hidden = !isOpening;
+        modelPickerToggle.setAttribute("aria-expanded", String(isOpening));
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!modelPicker.contains(event.target)) closeModelPicker();
+      });
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !modelPickerMenu.hidden) {
+          closeModelPicker();
+          modelPickerToggle.focus();
+        }
+      });
+
+      function updateModelPickerSelection() {
+        modelPickerToggle.textContent = MODELS[currentModelIndex].name;
+        modelPickerMenu.querySelectorAll("button").forEach((button, index) => {
+          if (index === currentModelIndex) {
+            button.setAttribute("aria-current", "true");
+          } else {
+            button.removeAttribute("aria-current");
+          }
+        });
       }
 
       function disposeGroupContents(group, disposeGeometry) {
@@ -719,6 +821,7 @@
             try {
               loadModel(gltf);
               currentModelIndex = index;
+              updateModelPickerSelection();
               scene.background = new THREE.Color(MODELS[index].backgroundColor);
               document.body.style.backgroundColor = MODELS[index].backgroundColor;
               themeColorMeta.content = MODELS[index].backgroundColor;
@@ -820,7 +923,9 @@
       function modelIndexFromUrl() {
         const modelId = new URLSearchParams(window.location.search).get("model");
         const index = MODELS.findIndex((model) => model.id === modelId);
-        return index >= 0 ? index : 0;
+        return index >= 0
+          ? index
+          : Math.floor(Math.random() * MODELS.length);
       }
 
       window.addEventListener("popstate", () => {
