@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>How it's coded — Stratacutoscope</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+        font-size: 16px;
+        line-height: 1.4;
+        color: white;
+        background: black;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 16px;
+        background: black;
+      }
+
+      main { max-width: 760px; }
+      p { margin: 0 0 1em; }
+      a { color: white; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+      th, td {
+        padding: 0.45em 0.8em 0.45em 0;
+        vertical-align: top;
+        text-align: left;
+        font-weight: 400;
+      }
+      th { font-weight: 700; }
+      tr { border-top: 1px solid #555; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><b>How it's coded</b></p>
+      <p>A small, static 3D viewer. The page, styles, and application code are in <a href="./index.html">index.html</a>; no build step is used.</p>
+      <table>
+        <thead>
+          <tr><th>Part</th><th>What is used</th><th>Source / credit</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>3D models</td><td>.glb models made in Blender</td><td>Sander Joon</td></tr>
+          <tr><td>About image</td><td>stratacutoscope.gif</td><td>Sander Joon</td></tr>
+          <tr><td>Page and styling</td><td>HTML and inline CSS</td><td>Project code</td></tr>
+          <tr><td>Viewer and controls</td><td>JavaScript, WebGL, pointer/touch input, and device orientation</td><td>Project code in index.html</td></tr>
+          <tr><td>3D library</td><td>Three.js 0.170.0, OrbitControls, and GLTFLoader</td><td>Loaded from jsDelivr CDN; Three.js is MIT-licensed</td></tr>
+          <tr><td>Typeface</td><td>Inter, then Helvetica Neue or Arial fallback</td><td>System fonts; no web font is downloaded</td></tr>
+          <tr><td>Publishing</td><td>Static site</td><td>GitHub Pages</td></tr>
+          <tr><td>Code provenance</td><td>Whether any code was copied or AI-generated</td><td>Not recorded in the project, so its origin cannot be verified</td></tr>
+        </tbody>
+      </table>
+    </main>
+  </body>
+</html>

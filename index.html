@@ -227,6 +227,7 @@
           <p><b>Motion On</b> for auto-rotation<br/><b>Reset</b> to get back to front view</p>
           <p>Choose a model by name, or use <b>Previous</b>, <b>Next</b>, or <b>?</b> for a random model.</p>
           <p>Enable <b>Gyroscope</b> to rotate with phone.</p>
+          <p><a style="color:white;" href="./docs.html">Reads the docs</a></p>
           <p><small style="opacity: 50%; font-style: italic;">Please reach out to <b>sander.joon@gmail.com</b> if you have any suggestions<i>!</i></small></p>
         </div>
       </div>
@@ -247,6 +248,7 @@
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+      import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
       const MODELS = [
         {
           name: "Horse",
@@ -265,6 +267,12 @@
           id: "rotatinghead",
           url: "./20261009_RotatingHead_glb_v0001.glb",
           backgroundColor: "#9E4210"
+        },
+        {
+          name: "Dialogue",
+          id: "dialogue",
+          url: "./20261015_Faces_glb_v0001.glb",
+          backgroundColor: "#506666"
         }
       ];
       const CUT_ZOOM_SENSITIVITY = 0.4;
@@ -314,9 +322,9 @@
       ambient.position.set(0, 0, 1);
       //scene.add(ambient);
       const keyLight = new THREE.DirectionalLight(0xfff3e3, 1.7);
-      keyLight.position.set(-3.5, 5, 6);
+      keyLight.position.set(-3.5, 5, -10);
       scene.add(keyLight);
-      const fillLight = new THREE.DirectionalLight(0xdce5ef, 0.8);
+      const fillLight = new THREE.DirectionalLight(0xdce5ef, 0.2);
       fillLight.position.set(4, 1.5, -4);
       scene.add(fillLight);
       const capFillLight = new THREE.DirectionalLight(0xffffff, 2.5);
@@ -519,7 +527,7 @@
         const zoomInDistance = fitCameraDistance - camera.position.distanceTo(controls.target);
         const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY + cutDragOffset;
         cutPoint.copy(controls.target).addScaledVector(cameraDirection, cutDistance);
-        cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.negate(), cutPoint);
+        cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.clone().negate(), cutPoint);
         capGroup.position.copy(cutPoint);
         capGroup.quaternion.setFromUnitVectors(planeNormal, cameraDirection);
         capGroup.scale.setScalar(fitDistance * 4);
@@ -660,6 +668,15 @@
         return group;
       }
 
+      function createStencilGeometry(geometry) {
+        const positionGeometry = new THREE.BufferGeometry();
+        positionGeometry.setAttribute("position", geometry.getAttribute("position"));
+        positionGeometry.setIndex(geometry.getIndex());
+        const stencilGeometry = mergeVertices(positionGeometry);
+        positionGeometry.dispose();
+        return stencilGeometry;
+      }
+
       function createCap(meshMaterial, renderOrder, vertexColor) {
         const capMaterial = meshMaterial.clone();
         capMaterial.clippingPlanes = [];
@@ -716,7 +733,13 @@
 
         for (const [index, mesh] of meshes.entries()) {
           const geometry = mesh.geometry.clone();
-          const attributeColor = geometry.getAttribute("color_3");
+          // glTF stores Blender color layers by channel index, not by their original names.
+          const attributeColor = geometry.getAttribute("Attribute") ||
+            geometry.getAttribute("attribute") ||
+            geometry.getAttribute("color_3") ||
+            geometry.getAttribute("color_2") ||
+            geometry.getAttribute("color_1") ||
+            geometry.getAttribute("color");
           const vertexColor = attributeColor
             ? new THREE.Color(attributeColor.getX(0), attributeColor.getY(0), attributeColor.getZ(0))
             : new THREE.Color(1, 1, 1);
@@ -728,10 +751,13 @@
           geometry.deleteAttribute("color_1");
           geometry.deleteAttribute("color_2");
           geometry.deleteAttribute("color_3");
+          geometry.deleteAttribute("Attribute");
+          geometry.deleteAttribute("attribute");
           const centeredTransform = new THREE.Matrix4()
             .makeTranslation(-center.x, -center.y, -center.z)
             .multiply(mesh.matrixWorld);
           geometry.applyMatrix4(centeredTransform);
+          const stencilGeometry = createStencilGeometry(geometry);
           const material = Array.isArray(mesh.material)
             ? mesh.material.map((item) => {
                 const clone = item.clone();
@@ -750,7 +776,7 @@
             material.clippingPlanes = [cutPlane];
           }
           const materialList = Array.isArray(material) ? material : [material];
-          modelOrientation.add(createStencilGroup(geometry, index * 3 + 1));
+          modelOrientation.add(createStencilGroup(stencilGeometry, index * 3 + 1));
           const visibleMesh = new THREE.Mesh(geometry, material);
           visibleMesh.renderOrder = index * 3 + 3;
           modelOrientation.add(visibleMesh);
