@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 const MODELS = [
   {
     name: "Horse",
@@ -76,6 +77,13 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.localClippingEnabled = true;
+
+// A soft studio environment gives the PBR materials grazing-angle (fresnel)
+// reflections and fills in the shadows a little.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
+pmremGenerator.dispose();
 
 const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0);
 ambient.position.set(0, 0, 1);
