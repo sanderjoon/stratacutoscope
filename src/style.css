@@ -186,6 +186,10 @@ button:hover { opacity: 0.65; }
 }
 button[aria-pressed="true"] { font-weight: 800; }
 
+/* Play/pause shows the action a press will take. */
+#motion[data-playing="true"] .icon-play,
+#motion[data-playing="false"] .icon-pause { display: none; }
+
 button:disabled { cursor: wait; opacity: 0.55; }
 
 button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }

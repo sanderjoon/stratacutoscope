@@ -13,7 +13,15 @@
       <div class="status" id="status" role="status" aria-live="polite">Loading model…</div>
       <div class="footer">
         <div class="actions">
-          <button id="motion" type="button" aria-pressed="true">Motion on</button>
+          <button id="motion" type="button" aria-pressed="true" aria-label="Pause rotation" title="Pause rotation" data-playing="true">
+            <svg class="icon icon-pause" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <rect x="3" y="2" width="3.5" height="12" rx="0.75" />
+              <rect x="9.5" y="2" width="3.5" height="12" rx="0.75" />
+            </svg>
+            <svg class="icon icon-play" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M4 2.5v11a0.75 0.75 0 0 0 1.13 0.65l9-5.5a0.75 0.75 0 0 0 0-1.3l-9-5.5A0.75 0.75 0 0 0 4 2.5z" />
+            </svg>
+          </button>
           <button id="gyroscope" type="button" aria-pressed="false" aria-label="Toggle gyroscope rotation" hidden>Gyroscope off</button>
           <button id="about-toggle" type="button" aria-label="About this project" aria-expanded="false">?</button>
         </div>
@@ -24,7 +32,7 @@
           <p>All 3D models made by <a style="color:white;" href="https://www.sanderjoon.com" target="_blank"><b>Sander Joon</b></a> in Blender.</p>
           <p class="touch-only"><b>Drag</b> to rotate<br><b>Pinch</b> to zoom and cut deeper<br><b>Drag with two fingers</b> to pan</p>
           <p class="mouse-only"><b>Drag</b> to rotate<br><b>Scroll</b> to zoom and cut deeper</p>
-          <p><b>Motion On</b> for auto-rotation</p>
+          <p><b>Play</b> or <b>pause</b> the auto-rotation</p>
           <p>Choose a model by name, or use <b>Prev</b>, <b>Next</b>, or the <b>dice</b> for a random model.</p>
           <p class="touch-only">Enable <b>Gyroscope</b> to rotate with phone.</p>
           <p><a style="color:white;" href="./docs.html">Reads the docs</a></p>

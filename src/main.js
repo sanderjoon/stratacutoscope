@@ -719,8 +719,11 @@ function stopGyroscope() {
 
 motionButton.addEventListener("click", () => {
   motionEnabled = !motionEnabled;
-  motionButton.textContent = motionEnabled ? "Motion On" : "Motion Off";
+  motionButton.dataset.playing = String(motionEnabled);
   motionButton.setAttribute("aria-pressed", String(motionEnabled));
+  const label = motionEnabled ? "Pause rotation" : "Play rotation";
+  motionButton.setAttribute("aria-label", label);
+  motionButton.title = label;
 });
 
 gyroscopeButton.addEventListener("click", () => {
