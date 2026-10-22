@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { ConvexHull } from "three/addons/math/ConvexHull.js";
 const MODELS = [
   {
     name: "Horse",
@@ -119,6 +120,10 @@ const specimenRotation = new THREE.Quaternion();
 const worldZAxis = new THREE.Vector3(0, 0, 1);
 const localYAxis = new THREE.Vector3(0, 1, 0);
 const modelBounds = new THREE.Box3();
+let minCameraDistance = 0;
+// Convex hull vertices of the model (local space); enough to find its extent in any direction.
+let modelExtremePoints = [];
+const extremePoint = new THREE.Vector3();
 let initialCamera;
 let initialTarget;
 let currentModelIndex = -1;
@@ -276,6 +281,44 @@ function fitCameraToModel() {
   );
   camera.lookAt(controls.target);
   fitCameraDistance = camera.position.distanceTo(controls.target);
+}
+
+function hullVertices(points) {
+  try {
+    const hull = new ConvexHull().setFromPoints(points);
+    const unique = new Set();
+    for (const face of hull.faces) {
+      let edge = face.edge;
+      do {
+        unique.add(edge.head().point);
+        edge = edge.next;
+      } while (edge !== face.edge);
+    }
+    return [...unique];
+  } catch {
+    // Degenerate input (e.g. flat or tiny); fall back to the bounding box corners.
+    return Array.from({ length: 8 }, (_, i) => new THREE.Vector3(
+      i & 1 ? modelBounds.max.x : modelBounds.min.x,
+      i & 2 ? modelBounds.max.y : modelBounds.min.y,
+      i & 4 ? modelBounds.max.z : modelBounds.min.z
+    ));
+  }
+}
+
+// Zooming in pushes the cut plane deeper. Stop zooming once the plane would
+// pass the far side of the model (as currently rotated), i.e. once nothing is left.
+function limitZoomToModel() {
+  if (modelBounds.isEmpty()) return;
+  cameraDirection.copy(camera.position).sub(controls.target).normalize();
+  let depthBehindTarget = 0;
+  for (const point of modelExtremePoints) {
+    extremePoint.copy(point).applyMatrix4(modelOrientation.matrixWorld).sub(controls.target);
+    depthBehindTarget = Math.max(depthBehindTarget, -extremePoint.dot(cameraDirection));
+  }
+  controls.minDistance = Math.max(
+    minCameraDistance,
+    fitCameraDistance - depthBehindTarget / CUT_ZOOM_SENSITIVITY
+  );
 }
 
 function updateCutPlane() {
@@ -471,6 +514,7 @@ function loadModel(gltf) {
   modelOrientation.quaternion.identity();
   controls.target.set(0, 0, 0);
   camera.position.copy(viewDirection);
+  const hullInput = [];
 
   for (const [index, mesh] of meshes.entries()) {
     const geometry = mesh.geometry.clone();
@@ -498,6 +542,11 @@ function loadModel(gltf) {
       .makeTranslation(-center.x, -center.y, -center.z)
       .multiply(mesh.matrixWorld);
     geometry.applyMatrix4(centeredTransform);
+    const position = geometry.getAttribute("position");
+    const stride = Math.max(1, Math.ceil(position.count / 50000));
+    for (let i = 0; i < position.count; i += stride) {
+      hullInput.push(new THREE.Vector3().fromBufferAttribute(position, i));
+    }
     const stencilGeometry = createStencilGeometry(geometry);
     const material = Array.isArray(mesh.material)
       ? mesh.material.map((item) => {
@@ -525,7 +574,9 @@ function loadModel(gltf) {
     mesh.geometry.dispose();
   }
 
-  controls.minDistance = maxDimension * 0.03;
+  modelExtremePoints = hullVertices(hullInput);
+  minCameraDistance = maxDimension * 0.03;
+  controls.minDistance = minCameraDistance;
   controls.maxDistance = maxDimension * 20;
   camera.position.copy(viewDirection);
   resize();
@@ -713,6 +764,7 @@ function animate() {
     angularVelocity.x *= Math.exp(-HORIZONTAL_INERTIA_DAMPING * delta);
     angularVelocity.y *= Math.exp(-VERTICAL_INERTIA_DAMPING * delta);
   }
+  limitZoomToModel();
   controls.update();
   updateCutPlane();
   renderer.render(scene, camera);
