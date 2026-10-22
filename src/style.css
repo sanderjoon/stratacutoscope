@@ -163,6 +163,21 @@ button:hover { opacity: 0.65; }
   height: 1.15em;
   fill: currentColor;
 }
+
+/* The dice turns another 90° on each press, settling with a springy bounce.
+   The cubic-bezier is the fallback for browsers without linear() easing. */
+#random-model .icon {
+  transform: rotate(var(--dice-turn, 0deg));
+  transition: transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition-timing-function: linear(
+    0, 0.274, 0.577, 0.845, 1.042, 1.159, 1.205, 1.197, 1.156, 1.103, 1.051, 1.008,
+    0.98, 0.966, 0.963, 0.968, 0.977, 0.986, 0.995, 1.001, 1.005, 1.007, 1.006, 1.005, 1
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #random-model .icon { transition: none; }
+}
 button[aria-pressed="true"] { font-weight: 800; }
 
 button:disabled { cursor: wait; opacity: 0.55; }

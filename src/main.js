@@ -747,7 +747,10 @@ nextModelButton.addEventListener("click", () => {
   const index = (currentModelIndex + 1) % MODELS.length;
   changeModel(index);
 });
+let diceTurns = 0;
 randomModelButton.addEventListener("click", () => {
+  diceTurns += 1;
+  randomModelButton.style.setProperty("--dice-turn", `${diceTurns * 90}deg`);
   const offset = Math.floor(Math.random() * (MODELS.length - 1)) + 1;
   changeModel((currentModelIndex + offset) % MODELS.length);
 });
