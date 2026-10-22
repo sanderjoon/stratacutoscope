@@ -17,8 +17,9 @@ const FOG_DEPTH_RATIO = 4; // of the model's radius; how far behind the cut plan
 const INTRO_DOLLY_RATIO = 1.5; // of the model's radius; how far back the camera starts
 const INTRO_HAZE_RATIO = 0.3; // of the model's radius; fog depth at the start of the intro
 const INTRO_DURATION = 1800; // ms
-const SLIDE_OUT_DURATION = 320; // ms
-const SLIDE_IN_DURATION = 560; // ms
+const SLIDE_OUT_DURATION = 180; // ms
+const SLIDE_IN_DURATION = 420; // ms
+const SLIDE_TRAVEL = 0.3; // of the visible half-height; the fade does the rest
 const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
@@ -118,12 +119,17 @@ composer.addPass(new SMAAPass(1, 1));
 // Distance haze in the page's background colour. Blending toward a fog colour
 // would be shifted by tone mapping, so instead the fragment's alpha falls off
 // between fogNear and fogFar and the CSS background shows through.
+// Whole-model opacity, used by the switch transition. Shared by every material.
+const modelOpacity = { value: 1 };
 function fadeWithDistance(material) {
   material.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <fog_fragment>",
-      "#ifdef USE_FOG\n  gl_FragColor.a *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);\n#endif"
-    );
+    shader.uniforms.modelOpacity = modelOpacity;
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <fog_pars_fragment>", "#include <fog_pars_fragment>\nuniform float modelOpacity;")
+      .replace(
+        "#include <fog_fragment>",
+        "#ifdef USE_FOG\n  gl_FragColor.a *= (1.0 - smoothstep(fogNear, fogFar, vFogDepth)) * modelOpacity;\n#endif"
+      );
   };
   material.customProgramCacheKey = () => "fade-with-distance";
   return material;
@@ -440,18 +446,21 @@ function tween(duration, easing, update) {
   return promise;
 }
 
-// How far the model must move vertically to leave the viewport entirely.
-function slideExitDistance() {
+// Vertical travel of the switch transition: a short drift, with the fade
+// doing most of the work, so the change feels quick.
+function slideDistance() {
   const halfHeight = camera.position.distanceTo(controls.target) *
     Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-  return halfHeight + modelRadius;
+  return halfHeight * SLIDE_TRAVEL;
 }
 
-function slideTo(target, duration, easing) {
+function slideTo(targetOffset, targetOpacity, duration, easing) {
   slideTween?.cancel();
-  const from = slideOffset;
+  const fromOffset = slideOffset;
+  const fromOpacity = modelOpacity.value;
   slideTween = tween(duration, easing, (progress) => {
-    slideOffset = THREE.MathUtils.lerp(from, target, progress);
+    slideOffset = THREE.MathUtils.lerp(fromOffset, targetOffset, progress);
+    modelOpacity.value = THREE.MathUtils.lerp(fromOpacity, targetOpacity, progress);
   });
   return slideTween;
 }
@@ -789,10 +798,10 @@ async function changeModel(index, historyMode = "push", direction = 0) {
   setModelNavigationDisabled(true);
   const isFirstModel = currentModelIndex < 0;
   direction ||= isFirstModel ? 1 : switchDirection(index);
-  // The current model drops out while the next one is fetched.
+  // The current model drifts away and fades while the next one is fetched.
   const exit = isFirstModel
     ? null
-    : slideTo(-direction * slideExitDistance(), SLIDE_OUT_DURATION, easeInCubic);
+    : slideTo(-direction * slideDistance(), 0, SLIDE_OUT_DURATION, easeInCubic);
   const request = fetchModel(index, (progress) => {
     const percent = Math.min(Math.round(progress * 100), 99);
     setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
@@ -806,7 +815,7 @@ async function changeModel(index, historyMode = "push", direction = 0) {
   } catch (error) {
     modelRequests.delete(index);
     if (currentModelIndex >= 0) applyBackgroundColor(MODELS[currentModelIndex].backgroundColor);
-    if (exit) slideTo(0, SLIDE_IN_DURATION, easeOutCubic);
+    if (exit) slideTo(0, 1, SLIDE_IN_DURATION, easeOutCubic);
     console.error("Could not load the model:", error);
     setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
   }
@@ -818,8 +827,9 @@ async function changeModel(index, historyMode = "push", direction = 0) {
     if (isFirstModel) {
       playIntro();
     } else {
-      slideOffset = direction * slideExitDistance();
-      slideTo(0, SLIDE_IN_DURATION, easeOutCubic);
+      slideOffset = direction * slideDistance();
+      modelOpacity.value = 0;
+      slideTo(0, 1, SLIDE_IN_DURATION, easeOutCubic);
     }
     updateModelPickerSelection();
     if (historyMode) {
