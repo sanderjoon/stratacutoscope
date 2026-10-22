@@ -27,14 +27,30 @@ const GYROSCOPE_Y_SENSITIVITY = 10;
 // speed. They shape drag inertia and play/pause spin-up/coast-down alike.
 const HORIZONTAL_INERTIA_DAMPING = 1.1;
 const VERTICAL_INERTIA_DAMPING = 4;
-// Terrazzo chips in the cut face. They live in the model's own space, so the
-// cut shows their cross-sections and they grow and shrink as the plane moves.
-const CHIP_CELL_RATIO = 0.035; // of the model's largest dimension; one chip per cell at most
-const CHIP_DENSITY = 0.85; // share of cells that hold a chip
-const CHIP_RADIUS = [0.14, 0.4]; // of the cell size
-const CHIP_COLORS = ["#141414", "#f5efe4"];
-const GRAIN_SCALE = 2.6; // finer second layer of chips, this many times smaller
-const GRAIN_DENSITY = 0.5;
+// Engineered stone in the cut face: chips of a few tones set in a veined
+// resin. Everything is generated in the model's own space, so the cut shows
+// cross-sections of the chips and the veins, and they stay put as the plane moves.
+const CHIP_CELL_RATIO = 0.05; // of the model's largest dimension; one chip per cell at most
+const CHIP_LAYERS = [
+  // scale: cells per base cell; density: share of cells that hold a chip
+  { scale: 1, density: 0.75 },
+  { scale: 1.8, density: 0.6 },
+  { scale: 3.2, density: 0.5 },
+  { scale: 5.5, density: 0.4 }
+];
+const CHIP_RADIUS = [0.05, 0.28]; // of the cell size, skewed toward small
+// Chips sit on a cylindrical grid about the turntable axis, so a turn of the
+// model slides them through the cut instead of flashing new cross-sections.
+// Angular cells span a fixed angle, so chips are drawn out along their arc in
+// proportion to their radius: this much at the reference radius.
+const CHIP_ARC_STRETCH = 3;
+const CHIP_ARC_REFERENCE = 0.5; // of the model's radius
+const CHIP_COLORS = ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"];
+const CHIP_EMBED = 0.5; // how far a chip's tone can sink toward the resin colour
+const VEIN_SCALE = 0.22; // in base cells; smaller is a wider, lazier vein pattern
+const VEIN_WIDTH = 0.07; // bold veins; the finer second set is half as wide and strong
+const VEIN_STRENGTH = 0.7;
+const CLOUD_STRENGTH = 0.14; // mottling of the resin's brightness
 const CAP_EMISSIVE_INTENSITY = 0.65;
 const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
@@ -149,13 +165,22 @@ function fadeWithDistance(material) {
   return material;
 }
 
-// Cut-face chips. One random ellipsoid per cell of a 3D grid in model space;
-// a fragment on the cap is coloured by the chip it falls inside, if any.
+// Cut-face stone. Chips are random polyhedra, one per cell of a 3D grid in
+// model space, over a resin whose brightness is mottled and cut by thin veins.
 const chipUniforms = {
   capToModel: { value: new THREE.Matrix4() },
   chipCell: { value: 1 },
+  chipTurn: { value: 16 }, // angular cells in a full turn at the base scale
   chipColors: { value: CHIP_COLORS.map((hex) => new THREE.Color(hex)) }
 };
+// Fine chips first so the coarse ones land on top. Each layer's angular cell
+// count is rounded so the grid still wraps cleanly around the axis.
+const chipLayersGlsl = [...CHIP_LAYERS].reverse().map((layer, index) => `
+        turn = floor(chipTurn * ${layer.scale.toFixed(3)} + 0.5);
+        chip = chips(
+          vec3(stoneRadius * ${layer.scale.toFixed(3)} + ${(17.3 * index).toFixed(1)}, stoneTurns * turn, stonePoint.y * ${layer.scale.toFixed(3)} + ${(17.3 * index).toFixed(1)}),
+          turn, ${layer.density.toFixed(3)}, resin, pixel * ${layer.scale.toFixed(3)});
+        stone = mix(stone, chip.rgb, chip.a);`).join("");
 function speckleCap(material) {
   const fade = material.onBeforeCompile;
   material.onBeforeCompile = (shader) => {
@@ -172,6 +197,7 @@ function speckleCap(material) {
         varying vec3 vCapWorld;
         uniform mat4 capToModel;
         uniform float chipCell;
+        uniform float chipTurn;
         uniform vec3 chipColors[${CHIP_COLORS.length}];
         vec3 hash3(vec3 p) {
           p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
@@ -179,41 +205,96 @@ function speckleCap(material) {
                    dot(p, vec3(113.5, 271.9, 124.6)));
           return fract(sin(p) * 43758.5453123);
         }
-        // rgb: chip colour, a: coverage (anti-aliased).
-        vec4 chips(vec3 p, float density) {
-          vec3 cell = floor(p);
+        float noise(vec3 p) {
+          vec3 i = floor(p);
+          vec3 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(
+            mix(mix(hash3(i).x, hash3(i + vec3(1, 0, 0)).x, f.x),
+                mix(hash3(i + vec3(0, 1, 0)).x, hash3(i + vec3(1, 1, 0)).x, f.x), f.y),
+            mix(mix(hash3(i + vec3(0, 0, 1)).x, hash3(i + vec3(1, 0, 1)).x, f.x),
+                mix(hash3(i + vec3(0, 1, 1)).x, hash3(i + vec3(1, 1, 1)).x, f.x), f.y),
+            f.z) * 2.0 - 1.0;
+        }
+        float fbm(vec3 p) {
+          float sum = 0.0;
+          float amplitude = 0.5;
+          for (int i = 0; i < 4; i++) {
+            sum += amplitude * noise(p);
+            p = p * 2.03 + 11.1;
+            amplitude *= 0.5;
+          }
+          return sum;
+        }
+        // u is cylindrical, in cells: (radius, angle, height), with the angle
+        // wrapping every turn cells. rgb: chip colour, a: coverage
+        // (anti-aliased). pixel is the fragment's footprint in cells;
+        // derivatives are undefined inside the loop's branches, so it is
+        // taken outside.
+        vec4 chips(vec3 u, float turn, float density, vec3 resin, float pixel) {
+          vec3 cell = floor(u);
           vec4 result = vec4(0.0);
-          // Derivatives are undefined inside the loop's branches, so take the
-          // pixel's footprint here and use it for the edge softness.
-          float pixel = length(fwidth(p)) * 0.7;
+          // One pixel spans more angular cells the closer it is to the axis.
+          vec3 footprint = vec3(pixel, pixel * turn / max(u.x * 6.2831853, 1e-3), pixel);
           for (int x = -1; x <= 1; x++)
           for (int y = -1; y <= 1; y++)
           for (int z = -1; z <= 1; z++) {
             vec3 neighbour = cell + vec3(x, y, z);
-            vec3 seed = hash3(neighbour);
+            vec3 key = vec3(neighbour.x, mod(neighbour.y, turn), neighbour.z);
+            vec3 seed = hash3(key);
             if (seed.x > density) continue;
-            vec3 shape = hash3(neighbour + 17.3);
-            vec3 centre = neighbour + 0.5 + (seed - 0.5) * 0.3;
-            vec3 stretch = 0.7 + shape * 0.6;
-            float radius = mix(${CHIP_RADIUS[0].toFixed(3)}, ${CHIP_RADIUS[1].toFixed(3)}, shape.x);
-            float distance = length((p - centre) / stretch);
-            float coverage = 1.0 - smoothstep(radius - pixel, radius + pixel, distance);
+            vec3 shape = hash3(key + 17.3);
+            vec3 spin = hash3(key + 41.9);
+            vec3 tone = hash3(key + 73.1);
+            vec3 centre = neighbour + 0.5 + (seed - 0.5) * 0.4;
+            vec3 offset = u - centre;
+            offset.y = mod(offset.y + turn * 0.5, turn) - turn * 0.5;
+            // Mostly small chips, a few large ones.
+            float radius = ${CHIP_RADIUS[0].toFixed(3)} *
+              pow(${(CHIP_RADIUS[1] / CHIP_RADIUS[0]).toFixed(3)}, shape.x * shape.x);
+            vec3 extent = radius * (0.6 + shape * 0.8);
+            // A random roll about the arc, then a shard somewhere between a
+            // box, an octahedron and a sphere.
+            float roll = spin.x * 6.2831853;
+            vec3 q = abs(vec3(
+              cos(roll) * offset.x - sin(roll) * offset.z,
+              offset.y,
+              sin(roll) * offset.x + cos(roll) * offset.z)) / extent;
+            float box = max(max(q.x, q.y), q.z);
+            float octahedron = (q.x + q.y + q.z) / (1.0 + spin.y * 1.2);
+            float sphere = length(q);
+            float distance = mix(max(box, octahedron), sphere, tone.y * 0.7);
+            float width = length(footprint / extent);
+            float coverage = 1.0 - smoothstep(1.0 - width, 1.0 + width, distance);
             if (coverage > result.a) {
-              int index = int(seed.z * ${CHIP_COLORS.length}.0);
-              result = vec4(chipColors[index], coverage);
+              vec3 colour = chipColors[int(seed.z * ${CHIP_COLORS.length}.0)] * (0.8 + tone.z * 0.4);
+              colour = mix(colour, resin, tone.x * ${CHIP_EMBED.toFixed(3)});
+              result = vec4(colour, coverage);
             }
           }
           return result;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
-        vec3 chipPoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
-        vec4 grain = chips(chipPoint * ${GRAIN_SCALE.toFixed(3)} + 31.7, ${GRAIN_DENSITY.toFixed(3)});
-        vec4 chip = chips(chipPoint, ${CHIP_DENSITY.toFixed(3)});
-        chip = mix(grain, chip, chip.a);
-        chip.a = max(chip.a, grain.a);
-        diffuseColor.rgb = mix(diffuseColor.rgb, chip.rgb, chip.a);`)
+        vec3 stonePoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
+        float pixel = length(fwidth(stonePoint)) * 0.7;
+        // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
+        vec3 resin = diffuseColor.rgb * (1.0 + ${CLOUD_STRENGTH.toFixed(3)} * fbm(stonePoint * ${(VEIN_SCALE * 0.5).toFixed(4)} + 5.3));
+        // Veins are the zero crossings of a noise field, warped by another so
+        // they wander and branch like marble. A finer set lies underneath.
+        vec3 veinPoint = stonePoint * ${VEIN_SCALE.toFixed(4)};
+        veinPoint += 0.9 * vec3(fbm(veinPoint + 3.1), fbm(veinPoint + 9.7), fbm(veinPoint + 15.9));
+        float vein = 1.0 - smoothstep(0.0, ${VEIN_WIDTH.toFixed(3)}, abs(fbm(veinPoint)));
+        float fineVein = 1.0 - smoothstep(0.0, ${(VEIN_WIDTH / 2).toFixed(3)}, abs(fbm(veinPoint * 2.1 + 27.3)));
+        vec3 veinColour = mix(diffuseColor.rgb * 0.45, chipColors[0], 0.4);
+        resin = mix(resin, veinColour, max(vein, fineVein * 0.5) * ${VEIN_STRENGTH.toFixed(3)});
+        float stoneRadius = length(stonePoint.xz);
+        float stoneTurns = atan(stonePoint.z, stonePoint.x) / 6.2831853 + 0.5;
+        vec3 stone = resin;
+        vec4 chip;
+        float turn;${chipLayersGlsl}
+        diffuseColor.rgb = stone;`)
       .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
-        totalEmissiveRadiance = mix(totalEmissiveRadiance, chip.rgb * ${CAP_EMISSIVE_INTENSITY}, chip.a);`);
+        totalEmissiveRadiance = stone * ${CAP_EMISSIVE_INTENSITY};`);
   };
   material.customProgramCacheKey = () => "speckled-cap";
   return material;
@@ -845,6 +926,8 @@ function loadModel(gltf) {
   modelRadius = Math.max(...modelExtremePoints.map((point) => point.length()));
   aoPass.configuration.aoRadius = maxDimension * AO_RADIUS_RATIO;
   chipUniforms.chipCell.value = maxDimension * CHIP_CELL_RATIO;
+  chipUniforms.chipTurn.value = Math.max(4, Math.round(
+    (2 * Math.PI * CHIP_ARC_REFERENCE * modelRadius) / (CHIP_ARC_STRETCH * chipUniforms.chipCell.value)));
   minCameraDistance = maxDimension * 0.03;
   controls.minDistance = minCameraDistance;
   camera.position.copy(viewDirection);
@@ -955,13 +1038,25 @@ function stopGyroscope() {
   gyroscopeButton.setAttribute("aria-pressed", "false");
 }
 
-motionButton.addEventListener("click", () => {
+function toggleMotion() {
   motionEnabled = !motionEnabled;
   motionButton.dataset.playing = String(motionEnabled);
   motionButton.setAttribute("aria-pressed", String(motionEnabled));
   const label = motionEnabled ? "Pause rotation" : "Play rotation";
   motionButton.setAttribute("aria-label", label);
   motionButton.title = label;
+}
+
+motionButton.addEventListener("click", toggleMotion);
+
+// Space toggles the turntable too, unless a focused control would already
+// react to it (a focused button clicks on Space, which would toggle twice).
+window.addEventListener("keydown", (event) => {
+  if (event.key !== " " || event.repeat) return;
+  const target = event.target;
+  if (target instanceof HTMLElement && target.closest("button, input, select, textarea, a[href]")) return;
+  event.preventDefault();
+  toggleMotion();
 });
 
 gyroscopeButton.addEventListener("click", () => {
