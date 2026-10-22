@@ -131,6 +131,9 @@ canvas {
 
 .model-picker { position: relative; }
 
+/* Until main.js runs, the inline head script names the model via --model-name. */
+#model-picker-toggle:empty::before { content: var(--model-name, ""); }
+
 .model-picker-menu {
   position: absolute;
   z-index: 2;

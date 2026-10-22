@@ -49,6 +49,12 @@ function applyBackgroundColor(hex) {
   root.setProperty("--ink-fallback", inkColorFor(hex));
   themeColorMeta.content = hex;
 }
+
+// Background and name change together, as soon as a switch starts.
+function showModelIdentity(index) {
+  applyBackgroundColor(MODELS[index].backgroundColor);
+  modelPickerToggle.textContent = MODELS[index].name;
+}
 const canvas = document.querySelector("#scene");
 const isTouchDevice = navigator.maxTouchPoints > 0 ||
   window.matchMedia("(pointer: coarse)").matches;
@@ -282,7 +288,6 @@ window.addEventListener("keydown", (event) => {
 });
 
 function updateModelPickerSelection() {
-  modelPickerToggle.textContent = MODELS[currentModelIndex].name;
   modelPickerMenu.querySelectorAll("button").forEach((button, index) => {
     if (index === currentModelIndex) {
       button.setAttribute("aria-current", "true");
@@ -820,14 +825,14 @@ async function changeModel(index, historyMode = "push", direction = 0) {
     setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
   });
   if (!request.ready) setStatus(`Loading ${MODELS[index].name}…`);
-  // Colour the page straight away so the switch feels immediate even while the GLB downloads.
-  applyBackgroundColor(MODELS[index].backgroundColor);
+  // Name and colour the page straight away so the switch feels immediate even while the GLB downloads.
+  showModelIdentity(index);
   let gltf;
   try {
     gltf = await request;
   } catch (error) {
     modelRequests.delete(index);
-    if (currentModelIndex >= 0) applyBackgroundColor(MODELS[currentModelIndex].backgroundColor);
+    if (currentModelIndex >= 0) showModelIdentity(currentModelIndex);
     if (exit) slideTo(0, 1, SLIDE_IN_DURATION, easeOutCubic);
     console.error("Could not load the model:", error);
     setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
