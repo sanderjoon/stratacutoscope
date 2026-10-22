@@ -115,8 +115,8 @@ canvas {
   transform: translateX(-50%);
 }
 
-/* Previous and Next sit in equal side columns so the dice stays exactly centred
-   even though their labels differ in width. */
+/* Prev and Next sit in equal side columns so the dice stays exactly centred
+   regardless of label width. */
 .model-navigation-buttons {
   display: grid;
   grid-template-columns: 1fr auto 1fr;

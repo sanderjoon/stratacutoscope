@@ -26,7 +26,7 @@
           <p class="touch-only"><b>Drag</b> to rotate<br><b>Pinch</b> to zoom and cut deeper<br><b>Drag with two fingers</b> to pan</p>
           <p class="mouse-only"><b>Drag</b> to rotate<br><b>Scroll</b> to zoom and cut deeper</p>
           <p><b>Motion On</b> for auto-rotation<br/><b>Reset</b> to get back to front view</p>
-          <p>Choose a model by name, or use <b>Previous</b>, <b>Next</b>, or the <b>dice</b> for a random model.</p>
+          <p>Choose a model by name, or use <b>Prev</b>, <b>Next</b>, or the <b>dice</b> for a random model.</p>
           <p class="touch-only">Enable <b>Gyroscope</b> to rotate with phone.</p>
           <p><a style="color:white;" href="./docs.html">Reads the docs</a></p>
           <p><small style="opacity: 50%; font-style: italic;">Please reach out to <b>sander.joon@gmail.com</b> if you have any suggestions<i>!</i></small></p>
@@ -38,7 +38,7 @@
           <div class="model-picker-menu" id="model-picker-menu" role="menu" aria-label="Choose a model" hidden></div>
         </div>
         <div class="model-navigation-buttons">
-          <button id="previous-model" type="button" disabled>&lt; Previous</button>
+          <button id="previous-model" type="button" aria-label="Previous model" disabled>&lt; Prev</button>
           <button id="random-model" type="button" aria-label="Random model" title="Random model" disabled>
             <svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
               <rect x="1" y="1" width="14" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -49,7 +49,7 @@
               <circle cx="11" cy="11" r="1.3" />
             </svg>
           </button>
-          <button id="next-model" type="button" disabled>Next &gt;</button>
+          <button id="next-model" type="button" aria-label="Next model" disabled>Next &gt;</button>
         </div>
       </nav>
     </main>
