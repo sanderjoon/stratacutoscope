@@ -1,0 +1,740 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+const MODELS = [
+  {
+    name: "Horse",
+    id: "horse",
+    url: "./assets/models/horse.glb",
+    backgroundColor: "#760DD9"
+  },
+  {
+    name: "Handshake",
+    id: "handshake",
+    url: "./assets/models/handshake.glb",
+    backgroundColor: "#0d9d36"
+  },
+  {
+    name: "Rotating Head",
+    id: "rotatinghead",
+    url: "./assets/models/rotating-head.glb",
+    backgroundColor: "#9E4210"
+  },
+  {
+    name: "Dialogue",
+    id: "dialogue",
+    url: "./assets/models/dialogue.glb",
+    backgroundColor: "#506666"
+  },
+  {
+    name: "Bouncing Balls",
+    id: "bouncingballs",
+    url: "./assets/models/bouncing-balls.glb",
+    backgroundColor: "#000000"
+  }
+];
+const CUT_ZOOM_SENSITIVITY = 0.4;
+const CUT_DRAG_SCREEN_TRAVEL = 1.5;
+const DRAG_ROTATION_SENSITIVITY = 0.008;
+const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
+const GYROSCOPE_Y_SENSITIVITY = 10;
+const HORIZONTAL_INERTIA_DAMPING = 1.1;
+const VERTICAL_INERTIA_DAMPING = 4;
+const status = document.querySelector("#status");
+const motionButton = document.querySelector("#motion");
+const gyroscopeButton = document.querySelector("#gyroscope");
+const resetButton = document.querySelector("#reset");
+const aboutToggleButton = document.querySelector("#about-toggle");
+const aboutOverlay = document.querySelector("#about-overlay");
+const modelPicker = document.querySelector(".model-picker");
+const modelPickerToggle = document.querySelector("#model-picker-toggle");
+const modelPickerMenu = document.querySelector("#model-picker-menu");
+const previousModelButton = document.querySelector("#previous-model");
+const randomModelButton = document.querySelector("#random-model");
+const nextModelButton = document.querySelector("#next-model");
+const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+const canvas = document.querySelector("#scene");
+const isTouchDevice = navigator.maxTouchPoints > 0 ||
+  window.matchMedia("(pointer: coarse)").matches;
+gyroscopeButton.hidden = !isTouchDevice || !("DeviceOrientationEvent" in window);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#CCC8C6");
+
+const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
+camera.up.set(0, 1, 0);
+camera.layers.enable(1);
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: false,
+  stencil: true
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.12;
+renderer.localClippingEnabled = true;
+
+const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0);
+ambient.position.set(0, 0, 1);
+//scene.add(ambient);
+const keyLight = new THREE.DirectionalLight(0xfff3e3, 1.7);
+keyLight.position.set(-3.5, 5, -10);
+scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0xdce5ef, 0.2);
+fillLight.position.set(4, 1.5, -4);
+scene.add(fillLight);
+const capFillLight = new THREE.DirectionalLight(0xffffff, 2.5);
+capFillLight.layers.set(1);
+scene.add(capFillLight);
+scene.add(capFillLight.target);
+
+const specimen = new THREE.Group();
+specimen.rotation.order = "YXZ";
+scene.add(specimen);
+const modelOrientation = new THREE.Group();
+specimen.add(modelOrientation);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.enablePan = false;
+controls.enableZoom = true;
+controls.enableRotate = false;
+controls.zoomSpeed = 0.3375;
+controls.rotateSpeed = 0.62;
+controls.target.set(0, 0, 0);
+
+let fitDistance = 4;
+let fitCameraDistance = 0;
+let cutDragOffset = 0;
+let previousTwoFingerCenter = null;
+let previousThreeFingerCenterY = null;
+const activePointers = new Map();
+const angularVelocity = new THREE.Vector2();
+let specimenPitch = 0;
+let specimenYaw = 0;
+const pitchRotation = new THREE.Quaternion();
+const yawRotation = new THREE.Quaternion();
+const specimenRotation = new THREE.Quaternion();
+const worldZAxis = new THREE.Vector3(0, 0, 1);
+const localYAxis = new THREE.Vector3(0, 1, 0);
+const modelBounds = new THREE.Box3();
+let initialCamera;
+let initialTarget;
+let currentModelIndex = -1;
+let modelLoading = false;
+let motionEnabled = true;
+let previousDeviceOrientation = null;
+let gyroscopeEnabled = false;
+let lastFrameTime = 0;
+const viewDirection = new THREE.Vector3(1, 0, 0);
+const cameraDirection = new THREE.Vector3();
+const panOffset = new THREE.Vector3();
+const panRight = new THREE.Vector3();
+const panUp = new THREE.Vector3();
+const cutPoint = new THREE.Vector3();
+const cutPlane = new THREE.Plane();
+const planeNormal = new THREE.Vector3(0, 0, 1);
+const capGeometry = new THREE.PlaneGeometry(1, 1);
+const cameraDirectionForFit = new THREE.Vector3();
+let previousPointerTime = 0;
+const modelLoader = new GLTFLoader();
+
+function setStatus(message, isError = false) {
+  status.textContent = message;
+  status.dataset.error = String(isError);
+  status.hidden = !message;
+}
+
+function setModelNavigationDisabled(disabled) {
+  modelPickerToggle.disabled = disabled;
+  previousModelButton.disabled = disabled;
+  randomModelButton.disabled = disabled;
+  nextModelButton.disabled = disabled;
+  modelPickerMenu.querySelectorAll("button").forEach((button) => {
+    button.disabled = disabled;
+  });
+  if (disabled) closeModelPicker();
+}
+
+function closeModelPicker() {
+  modelPickerMenu.hidden = true;
+  modelPickerToggle.setAttribute("aria-expanded", "false");
+}
+
+MODELS.forEach((model, index) => {
+  const option = document.createElement("button");
+  option.type = "button";
+  option.textContent = model.name;
+  option.setAttribute("role", "menuitem");
+  option.addEventListener("click", () => {
+    closeModelPicker();
+    modelPickerToggle.focus();
+    changeModel(index);
+  });
+  modelPickerMenu.append(option);
+});
+
+modelPickerToggle.addEventListener("click", () => {
+  const isOpening = modelPickerMenu.hidden;
+  modelPickerMenu.hidden = !isOpening;
+  modelPickerToggle.setAttribute("aria-expanded", String(isOpening));
+});
+
+document.addEventListener("click", (event) => {
+  if (!modelPicker.contains(event.target)) closeModelPicker();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !modelPickerMenu.hidden) {
+    closeModelPicker();
+    modelPickerToggle.focus();
+  }
+});
+
+function updateModelPickerSelection() {
+  modelPickerToggle.textContent = MODELS[currentModelIndex].name;
+  modelPickerMenu.querySelectorAll("button").forEach((button, index) => {
+    if (index === currentModelIndex) {
+      button.setAttribute("aria-current", "true");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  });
+}
+
+function disposeGroupContents(group, disposeGeometry) {
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+  group.traverse((object) => {
+    if (object.geometry && disposeGeometry) geometries.add(object.geometry);
+    if (object.material) {
+      for (const material of Array.isArray(object.material)
+        ? object.material
+        : [object.material]) {
+        materials.add(material);
+        for (const value of Object.values(material)) {
+          if (value?.isTexture) textures.add(value);
+        }
+      }
+    }
+  });
+  for (const child of [...group.children]) group.remove(child);
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
+  for (const texture of textures) texture.dispose();
+}
+
+function resize() {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  if (!width || !height) return;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  if (modelBounds.isEmpty() === false) {
+    fitCameraToModel();
+    initialCamera = camera.position.clone();
+    initialTarget = controls.target.clone();
+  }
+}
+
+function fitCameraToModel() {
+  cameraDirectionForFit.copy(camera.position).sub(controls.target).normalize();
+  if (cameraDirectionForFit.lengthSq() === 0) {
+    cameraDirectionForFit.copy(viewDirection);
+  }
+  camera.position.copy(controls.target).add(cameraDirectionForFit);
+  camera.lookAt(controls.target);
+  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const horizontalTangent = verticalTangent * camera.aspect;
+  const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+  const distanceToFit = (point) => {
+    const depth = point.dot(cameraDirectionForFit);
+    const horizontal = Math.abs(point.dot(cameraRight)) / horizontalTangent;
+    const vertical = Math.abs(point.dot(cameraUp)) / verticalTangent;
+    return depth + Math.max(horizontal, vertical);
+  };
+  let distance = 0;
+  for (let x = 0; x < 2; x += 1) {
+    for (let y = 0; y < 2; y += 1) {
+      for (let z = 0; z < 2; z += 1) {
+        const point = new THREE.Vector3(
+          x ? modelBounds.max.x : modelBounds.min.x,
+          y ? modelBounds.max.y : modelBounds.min.y,
+          z ? modelBounds.max.z : modelBounds.min.z
+        );
+        distance = Math.max(distance, distanceToFit(point));
+      }
+    }
+  }
+  camera.position.copy(controls.target).addScaledVector(
+    cameraDirectionForFit,
+    distance * 0.9
+  );
+  camera.lookAt(controls.target);
+  fitCameraDistance = camera.position.distanceTo(controls.target);
+}
+
+function updateCutPlane() {
+  cameraDirection.copy(camera.position).sub(controls.target).normalize();
+  const zoomInDistance = fitCameraDistance - camera.position.distanceTo(controls.target);
+  const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY + cutDragOffset;
+  cutPoint.copy(controls.target).addScaledVector(cameraDirection, cutDistance);
+  cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.clone().negate(), cutPoint);
+  capGroup.position.copy(cutPoint);
+  capGroup.quaternion.setFromUnitVectors(planeNormal, cameraDirection);
+  capGroup.scale.setScalar(fitDistance * 4);
+  capFillLight.position.copy(camera.position);
+  capFillLight.target.position.copy(controls.target);
+}
+
+function applyDragRotation(horizontalAngle, verticalAngle) {
+  specimenYaw -= horizontalAngle;
+  specimenPitch -= verticalAngle;
+  updateSpecimenRotation();
+}
+
+function updateSpecimenRotation() {
+  pitchRotation.setFromAxisAngle(worldZAxis, specimenPitch);
+  yawRotation.setFromAxisAngle(localYAxis, specimenYaw);
+  specimenRotation.copy(pitchRotation).multiply(yawRotation);
+  specimen.quaternion.copy(specimenRotation);
+}
+
+canvas.addEventListener("pointerdown", (event) => {
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (activePointers.size === 1) {
+    previousPointerTime = event.timeStamp;
+  } else {
+    angularVelocity.set(0, 0);
+  }
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  const previous = activePointers.get(event.pointerId);
+  if (!previous) return;
+  const deltaX = event.clientX - previous.x;
+  const deltaY = event.clientY - previous.y;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  if (activePointers.size !== 1) return;
+
+  const elapsed = Math.max((event.timeStamp - previousPointerTime) / 1000, 1 / 120);
+  const horizontalAngle = deltaX * DRAG_ROTATION_SENSITIVITY;
+  const verticalAngle = deltaY * VERTICAL_DRAG_ROTATION_SENSITIVITY;
+  applyDragRotation(horizontalAngle, verticalAngle);
+  angularVelocity.set(
+    THREE.MathUtils.clamp(horizontalAngle / elapsed, -12, 12),
+    THREE.MathUtils.clamp(verticalAngle / elapsed, -12, 12)
+  );
+  previousPointerTime = event.timeStamp;
+});
+
+const finishPointer = (event) => {
+  activePointers.delete(event.pointerId);
+  if (activePointers.size) angularVelocity.set(0, 0);
+};
+canvas.addEventListener("pointerup", finishPointer);
+canvas.addEventListener("pointercancel", finishPointer);
+
+canvas.addEventListener("touchstart", (event) => {
+  previousTwoFingerCenter = event.touches.length === 2
+    ? {
+        x: (event.touches[0].clientX + event.touches[1].clientX) * 0.5,
+        y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+      }
+    : null;
+  previousThreeFingerCenterY = event.touches.length === 3
+    ? (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3
+    : null;
+}, { passive: true });
+
+canvas.addEventListener("touchmove", (event) => {
+  if (event.touches.length === 2) {
+    const center = {
+      x: (event.touches[0].clientX + event.touches[1].clientX) * 0.5,
+      y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
+    };
+    if (previousTwoFingerCenter && canvas.clientHeight > 0) {
+      const unitsPerPixel = 2 * camera.position.distanceTo(controls.target) *
+        Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) / canvas.clientHeight;
+      panRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      panUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      panOffset.copy(panRight).multiplyScalar(
+        -(center.x - previousTwoFingerCenter.x) * unitsPerPixel
+      ).addScaledVector(panUp, (center.y - previousTwoFingerCenter.y) * unitsPerPixel);
+      camera.position.add(panOffset);
+      controls.target.add(panOffset);
+    }
+    previousTwoFingerCenter = center;
+  } else {
+    previousTwoFingerCenter = null;
+  }
+  if (event.touches.length !== 3) {
+    previousThreeFingerCenterY = null;
+    return;
+  }
+  const centerY = (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3;
+  if (previousThreeFingerCenterY !== null && canvas.clientHeight > 0) {
+    cutDragOffset += (centerY - previousThreeFingerCenterY) *
+      fitDistance * CUT_DRAG_SCREEN_TRAVEL / canvas.clientHeight;
+  }
+  previousThreeFingerCenterY = centerY;
+}, { passive: true });
+
+canvas.addEventListener("touchend", (event) => {
+  if (event.touches.length !== 2) previousTwoFingerCenter = null;
+  if (event.touches.length < 3) previousThreeFingerCenterY = null;
+}, { passive: true });
+
+const capGroup = new THREE.Group();
+scene.add(capGroup);
+
+function createStencilGroup(geometry, renderOrder) {
+  const group = new THREE.Group();
+  const baseMaterial = new THREE.MeshBasicMaterial();
+  baseMaterial.depthWrite = false;
+  baseMaterial.depthTest = false;
+  baseMaterial.colorWrite = false;
+  baseMaterial.stencilWrite = true;
+  baseMaterial.stencilFunc = THREE.AlwaysStencilFunc;
+
+  const backMaterial = baseMaterial.clone();
+  backMaterial.side = THREE.BackSide;
+  backMaterial.clippingPlanes = [cutPlane];
+  backMaterial.stencilFail = THREE.IncrementWrapStencilOp;
+  backMaterial.stencilZFail = THREE.IncrementWrapStencilOp;
+  backMaterial.stencilZPass = THREE.IncrementWrapStencilOp;
+  const backFaces = new THREE.Mesh(geometry, backMaterial);
+  backFaces.renderOrder = renderOrder;
+  group.add(backFaces);
+
+  const frontMaterial = baseMaterial.clone();
+  frontMaterial.side = THREE.FrontSide;
+  frontMaterial.clippingPlanes = [cutPlane];
+  frontMaterial.stencilFail = THREE.DecrementWrapStencilOp;
+  frontMaterial.stencilZFail = THREE.DecrementWrapStencilOp;
+  frontMaterial.stencilZPass = THREE.DecrementWrapStencilOp;
+  const frontFaces = new THREE.Mesh(geometry, frontMaterial);
+  frontFaces.renderOrder = renderOrder;
+  group.add(frontFaces);
+  baseMaterial.dispose();
+  return group;
+}
+
+function createStencilGeometry(geometry) {
+  const positionGeometry = new THREE.BufferGeometry();
+  positionGeometry.setAttribute("position", geometry.getAttribute("position"));
+  positionGeometry.setIndex(geometry.getIndex());
+  const stencilGeometry = mergeVertices(positionGeometry);
+  positionGeometry.dispose();
+  return stencilGeometry;
+}
+
+function createCap(meshMaterial, renderOrder, vertexColor) {
+  const capMaterial = meshMaterial.clone();
+  capMaterial.clippingPlanes = [];
+  capMaterial.vertexColors = false;
+  capMaterial.color.multiply(vertexColor);
+  if (capMaterial.emissive) {
+    capMaterial.emissive.copy(capMaterial.color);
+    capMaterial.emissiveIntensity = 0.65;
+  }
+  capMaterial.stencilWrite = true;
+  capMaterial.stencilRef = 0;
+  capMaterial.stencilFunc = THREE.NotEqualStencilFunc;
+  capMaterial.stencilFail = THREE.ReplaceStencilOp;
+  capMaterial.stencilZFail = THREE.ReplaceStencilOp;
+  capMaterial.stencilZPass = THREE.ReplaceStencilOp;
+
+  const cap = new THREE.Mesh(capGeometry, capMaterial);
+  cap.layers.enable(1);
+  cap.renderOrder = renderOrder;
+  cap.onAfterRender = (activeRenderer) => activeRenderer.clearStencil();
+  capGroup.add(cap);
+}
+
+function loadModel(gltf) {
+  const source = gltf.scene;
+  source.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(source);
+  const center = bounds.getCenter(new THREE.Vector3());
+  modelBounds.copy(bounds);
+  modelBounds.min.sub(center);
+  modelBounds.max.sub(center);
+  const size = bounds.getSize(new THREE.Vector3());
+  const maxDimension = Math.max(size.x, size.y, size.z);
+  if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
+    throw new Error("The GLB does not contain measurable geometry.");
+  }
+
+  fitDistance = maxDimension;
+  const meshes = [];
+  source.traverse((object) => {
+    if (object.isMesh) meshes.push(object);
+  });
+  if (!meshes.length) throw new Error("The GLB contains no mesh to display.");
+
+  disposeGroupContents(modelOrientation, true);
+  disposeGroupContents(capGroup, false);
+  specimenPitch = 0;
+  specimenYaw = 0;
+  updateSpecimenRotation();
+  modelOrientation.quaternion.identity();
+  cutDragOffset = 0;
+  controls.target.set(0, 0, 0);
+  camera.position.copy(viewDirection);
+
+  for (const [index, mesh] of meshes.entries()) {
+    const geometry = mesh.geometry.clone();
+    // glTF stores Blender color layers by channel index, not by their original names.
+    const attributeColor = geometry.getAttribute("Attribute") ||
+      geometry.getAttribute("attribute") ||
+      geometry.getAttribute("color_3") ||
+      geometry.getAttribute("color_2") ||
+      geometry.getAttribute("color_1") ||
+      geometry.getAttribute("color");
+    const vertexColor = attributeColor
+      ? new THREE.Color(attributeColor.getX(0), attributeColor.getY(0), attributeColor.getZ(0))
+      : new THREE.Color(1, 1, 1);
+    if (attributeColor) {
+      geometry.setAttribute("color", attributeColor);
+    } else {
+      geometry.deleteAttribute("color");
+    }
+    geometry.deleteAttribute("color_1");
+    geometry.deleteAttribute("color_2");
+    geometry.deleteAttribute("color_3");
+    geometry.deleteAttribute("Attribute");
+    geometry.deleteAttribute("attribute");
+    const centeredTransform = new THREE.Matrix4()
+      .makeTranslation(-center.x, -center.y, -center.z)
+      .multiply(mesh.matrixWorld);
+    geometry.applyMatrix4(centeredTransform);
+    const stencilGeometry = createStencilGeometry(geometry);
+    const material = Array.isArray(mesh.material)
+      ? mesh.material.map((item) => {
+          const clone = item.clone();
+          clone.vertexColors = Boolean(attributeColor);
+          clone.clippingPlanes = [cutPlane];
+          return clone;
+        })
+      : mesh.material.clone();
+    if (Array.isArray(material)) {
+      material.forEach((item) => {
+        item.vertexColors = Boolean(attributeColor);
+        item.clippingPlanes = [cutPlane];
+      });
+    } else {
+      material.vertexColors = Boolean(attributeColor);
+      material.clippingPlanes = [cutPlane];
+    }
+    const materialList = Array.isArray(material) ? material : [material];
+    modelOrientation.add(createStencilGroup(stencilGeometry, index * 3 + 1));
+    const visibleMesh = new THREE.Mesh(geometry, material);
+    visibleMesh.renderOrder = index * 3 + 3;
+    modelOrientation.add(visibleMesh);
+    createCap(materialList[0], index * 3 + 2, vertexColor);
+    mesh.geometry.dispose();
+  }
+
+  controls.minDistance = maxDimension * 0.03;
+  controls.maxDistance = maxDimension * 20;
+  camera.position.copy(viewDirection);
+  resize();
+  initialCamera = camera.position.clone();
+  initialTarget = controls.target.clone();
+  controls.update();
+  resetButton.disabled = false;
+  updateCutPlane();
+  setStatus("");
+}
+
+const degree = Math.PI / 180;
+
+function angleDelta(current, previous) {
+  return THREE.MathUtils.euclideanModulo(current - previous + 180, 360) - 180;
+}
+
+function onDeviceOrientation(event) {
+  if (!Number.isFinite(event.gamma)) return;
+  if (!previousDeviceOrientation) {
+    previousDeviceOrientation = { gamma: event.gamma };
+    return;
+  }
+
+  const yAxisAngle = angleDelta(event.gamma, previousDeviceOrientation.gamma) *
+    degree * GYROSCOPE_Y_SENSITIVITY;
+  applyDragRotation(yAxisAngle, 0);
+  previousDeviceOrientation.gamma = event.gamma;
+}
+
+async function enableGyroscope() {
+  previousDeviceOrientation = null;
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== "granted") {
+        setStatus("Gyroscope permission was not granted.");
+        return;
+      }
+    }
+    window.addEventListener("deviceorientation", onDeviceOrientation, { passive: true });
+    gyroscopeEnabled = true;
+    gyroscopeButton.textContent = "Gyroscope on";
+    gyroscopeButton.setAttribute("aria-pressed", "true");
+    setStatus("");
+  } catch (error) {
+    console.warn("Could not enable phone gyroscope:", error);
+    setStatus("Could not enable the gyroscope. Check browser permission settings.");
+  }
+}
+
+function changeModel(index, historyMode = "push") {
+  if (modelLoading || index < 0 || index >= MODELS.length) return;
+  modelLoading = true;
+  setModelNavigationDisabled(true);
+  setStatus(`Loading ${MODELS[index].name}…`);
+  modelLoader.load(
+    MODELS[index].url,
+    (gltf) => {
+      try {
+        loadModel(gltf);
+        currentModelIndex = index;
+        updateModelPickerSelection();
+        scene.background = new THREE.Color(MODELS[index].backgroundColor);
+        document.body.style.backgroundColor = MODELS[index].backgroundColor;
+        themeColorMeta.content = MODELS[index].backgroundColor;
+        if (historyMode) {
+          const url = new URL(window.location.href);
+          url.searchParams.set("model", MODELS[index].id);
+          window.history[`${historyMode}State`]({}, "", url);
+        }
+      } catch (error) {
+        console.error("Could not display the model:", error);
+        setStatus(`Could not display the model: ${error.message}`, true);
+      } finally {
+        modelLoading = false;
+        setModelNavigationDisabled(false);
+      }
+    },
+    (event) => {
+      if (event.total) {
+        const percent = Math.min(Math.round((event.loaded / event.total) * 100), 99);
+        setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
+      }
+    },
+    (error) => {
+      console.error("Could not load the model:", error);
+      setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
+      modelLoading = false;
+      setModelNavigationDisabled(false);
+    }
+  );
+}
+
+function stopGyroscope() {
+  window.removeEventListener("deviceorientation", onDeviceOrientation);
+  gyroscopeEnabled = false;
+  previousDeviceOrientation = null;
+  gyroscopeButton.textContent = "Gyroscope off";
+  gyroscopeButton.setAttribute("aria-pressed", "false");
+}
+
+motionButton.addEventListener("click", () => {
+  motionEnabled = !motionEnabled;
+  motionButton.textContent = motionEnabled ? "Motion On" : "Motion Off";
+  motionButton.setAttribute("aria-pressed", String(motionEnabled));
+});
+
+gyroscopeButton.addEventListener("click", () => {
+  if (gyroscopeEnabled) {
+    stopGyroscope();
+  } else {
+    enableGyroscope();
+  }
+});
+
+previousModelButton.addEventListener("click", () => {
+  const index = (currentModelIndex - 1 + MODELS.length) % MODELS.length;
+  changeModel(index);
+});
+nextModelButton.addEventListener("click", () => {
+  const index = (currentModelIndex + 1) % MODELS.length;
+  changeModel(index);
+});
+randomModelButton.addEventListener("click", () => {
+  const offset = Math.floor(Math.random() * (MODELS.length - 1)) + 1;
+  changeModel((currentModelIndex + offset) % MODELS.length);
+});
+
+function closeAboutOverlay() {
+  aboutOverlay.hidden = true;
+  aboutToggleButton.setAttribute("aria-expanded", "false");
+}
+
+aboutToggleButton.addEventListener("click", () => {
+  aboutOverlay.hidden = false;
+  aboutToggleButton.setAttribute("aria-expanded", "true");
+  aboutOverlay.focus();
+});
+aboutOverlay.addEventListener("click", () => {
+  closeAboutOverlay();
+  aboutToggleButton.focus();
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !aboutOverlay.hidden) closeAboutOverlay();
+});
+
+resetButton.addEventListener("click", () => {
+  specimenPitch = 0;
+  specimenYaw = 0;
+  updateSpecimenRotation();
+  modelOrientation.quaternion.identity();
+  cutDragOffset = 0;
+  controls.target.copy(initialTarget);
+  camera.position.copy(initialCamera);
+  controls.update();
+  previousDeviceOrientation = null;
+});
+
+window.addEventListener("resize", resize);
+
+function modelIndexFromUrl() {
+  const modelId = new URLSearchParams(window.location.search).get("model");
+  const index = MODELS.findIndex((model) => model.id === modelId);
+  return index >= 0
+    ? index
+    : Math.floor(Math.random() * MODELS.length);
+}
+
+window.addEventListener("popstate", () => {
+  changeModel(modelIndexFromUrl(), false);
+});
+changeModel(modelIndexFromUrl(), "replace");
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
+  lastFrameTime = now;
+  if (motionEnabled) {
+    specimenYaw += delta * 0.65;
+    updateSpecimenRotation();
+  }
+  if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
+    applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
+    angularVelocity.x *= Math.exp(-HORIZONTAL_INERTIA_DAMPING * delta);
+    angularVelocity.y *= Math.exp(-VERTICAL_INERTIA_DAMPING * delta);
+  }
+  controls.update();
+  updateCutPlane();
+  renderer.render(scene, camera);
+}
+resize();
+animate();
