@@ -37,19 +37,43 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out main (site root)
+      - name: Check out main
         uses: actions/checkout@v4
-      - name: Check out dev-baku (served at /dev/)
+        with:
+          path: main
+      - name: Check out dev-baku
         uses: actions/checkout@v4
         with:
           ref: dev-baku
           path: dev
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Each checkout is either a plain static site (copied as-is) or a Vite
+      # project (built with yarn, dist/ is used). main goes to the site root,
+      # dev-baku to /dev/.
+      - name: Assemble site
+        run: |
+          set -eu
+          assemble() {
+            src="$1"; dest="$2"
+            mkdir -p "$dest"
+            if [ -f "$src/package.json" ]; then
+              (cd "$src" && yarn install --frozen-lockfile && yarn build)
+              cp -R "$src"/dist/. "$dest"/
+            else
+              rsync -a --exclude .git --exclude .github "$src"/ "$dest"/
+            fi
+          }
+          assemble main site
+          assemble dev site/dev
       - name: Set up Pages
         uses: actions/configure-pages@v5
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: site
       - name: Deploy site
         id: deployment
         uses: actions/deploy-pages@v4
