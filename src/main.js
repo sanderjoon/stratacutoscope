@@ -27,6 +27,15 @@ const GYROSCOPE_Y_SENSITIVITY = 10;
 // speed. They shape drag inertia and play/pause spin-up/coast-down alike.
 const HORIZONTAL_INERTIA_DAMPING = 1.1;
 const VERTICAL_INERTIA_DAMPING = 4;
+// Terrazzo chips in the cut face. They live in the model's own space, so the
+// cut shows their cross-sections and they grow and shrink as the plane moves.
+const CHIP_CELL_RATIO = 0.035; // of the model's largest dimension; one chip per cell at most
+const CHIP_DENSITY = 0.85; // share of cells that hold a chip
+const CHIP_RADIUS = [0.14, 0.4]; // of the cell size
+const CHIP_COLORS = ["#141414", "#f5efe4"];
+const GRAIN_SCALE = 2.6; // finer second layer of chips, this many times smaller
+const GRAIN_DENSITY = 0.5;
+const CAP_EMISSIVE_INTENSITY = 0.65;
 const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
 const gyroscopeButton = document.querySelector("#gyroscope");
@@ -137,6 +146,76 @@ function fadeWithDistance(material) {
       );
   };
   material.customProgramCacheKey = () => "fade-with-distance";
+  return material;
+}
+
+// Cut-face chips. One random ellipsoid per cell of a 3D grid in model space;
+// a fragment on the cap is coloured by the chip it falls inside, if any.
+const chipUniforms = {
+  capToModel: { value: new THREE.Matrix4() },
+  chipCell: { value: 1 },
+  chipColors: { value: CHIP_COLORS.map((hex) => new THREE.Color(hex)) }
+};
+function speckleCap(material) {
+  const fade = material.onBeforeCompile;
+  material.onBeforeCompile = (shader) => {
+    fade(shader);
+    Object.assign(shader.uniforms, chipUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCapWorld;")
+      .replace(
+        "#include <worldpos_vertex>",
+        "#include <worldpos_vertex>\nvCapWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;"
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>
+        varying vec3 vCapWorld;
+        uniform mat4 capToModel;
+        uniform float chipCell;
+        uniform vec3 chipColors[${CHIP_COLORS.length}];
+        vec3 hash3(vec3 p) {
+          p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+                   dot(p, vec3(269.5, 183.3, 246.1)),
+                   dot(p, vec3(113.5, 271.9, 124.6)));
+          return fract(sin(p) * 43758.5453123);
+        }
+        // rgb: chip colour, a: coverage (anti-aliased).
+        vec4 chips(vec3 p, float density) {
+          vec3 cell = floor(p);
+          vec4 result = vec4(0.0);
+          // Derivatives are undefined inside the loop's branches, so take the
+          // pixel's footprint here and use it for the edge softness.
+          float pixel = length(fwidth(p)) * 0.7;
+          for (int x = -1; x <= 1; x++)
+          for (int y = -1; y <= 1; y++)
+          for (int z = -1; z <= 1; z++) {
+            vec3 neighbour = cell + vec3(x, y, z);
+            vec3 seed = hash3(neighbour);
+            if (seed.x > density) continue;
+            vec3 shape = hash3(neighbour + 17.3);
+            vec3 centre = neighbour + 0.5 + (seed - 0.5) * 0.3;
+            vec3 stretch = 0.7 + shape * 0.6;
+            float radius = mix(${CHIP_RADIUS[0].toFixed(3)}, ${CHIP_RADIUS[1].toFixed(3)}, shape.x);
+            float distance = length((p - centre) / stretch);
+            float coverage = 1.0 - smoothstep(radius - pixel, radius + pixel, distance);
+            if (coverage > result.a) {
+              int index = int(seed.z * ${CHIP_COLORS.length}.0);
+              result = vec4(chipColors[index], coverage);
+            }
+          }
+          return result;
+        }`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+        vec3 chipPoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
+        vec4 grain = chips(chipPoint * ${GRAIN_SCALE.toFixed(3)} + 31.7, ${GRAIN_DENSITY.toFixed(3)});
+        vec4 chip = chips(chipPoint, ${CHIP_DENSITY.toFixed(3)});
+        chip = mix(grain, chip, chip.a);
+        chip.a = max(chip.a, grain.a);
+        diffuseColor.rgb = mix(diffuseColor.rgb, chip.rgb, chip.a);`)
+      .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        totalEmissiveRadiance = mix(totalEmissiveRadiance, chip.rgb * ${CAP_EMISSIVE_INTENSITY}, chip.a);`);
+  };
+  material.customProgramCacheKey = () => "speckled-cap";
   return material;
 }
 
@@ -658,13 +737,13 @@ function createStencilGeometry(geometry) {
 }
 
 function createCap(meshMaterial, renderOrder, vertexColor) {
-  const capMaterial = fadeWithDistance(meshMaterial.clone());
+  const capMaterial = speckleCap(fadeWithDistance(meshMaterial.clone()));
   capMaterial.clippingPlanes = [];
   capMaterial.vertexColors = false;
   capMaterial.color.multiply(vertexColor);
   if (capMaterial.emissive) {
     capMaterial.emissive.copy(capMaterial.color);
-    capMaterial.emissiveIntensity = 0.65;
+    capMaterial.emissiveIntensity = CAP_EMISSIVE_INTENSITY;
   }
   capMaterial.stencilWrite = true;
   capMaterial.stencilRef = 0;
@@ -676,6 +755,9 @@ function createCap(meshMaterial, renderOrder, vertexColor) {
   const cap = new THREE.Mesh(capGeometry, capMaterial);
   cap.layers.enable(1);
   cap.renderOrder = renderOrder;
+  cap.onBeforeRender = () => {
+    chipUniforms.capToModel.value.copy(modelOrientation.matrixWorld).invert();
+  };
   cap.onAfterRender = (activeRenderer) => activeRenderer.clearStencil();
   capGroup.add(cap);
 }
@@ -762,6 +844,7 @@ function loadModel(gltf) {
   modelExtremePoints = hullVertices(hullInput);
   modelRadius = Math.max(...modelExtremePoints.map((point) => point.length()));
   aoPass.configuration.aoRadius = maxDimension * AO_RADIUS_RATIO;
+  chipUniforms.chipCell.value = maxDimension * CHIP_CELL_RATIO;
   minCameraDistance = maxDimension * 0.03;
   controls.minDistance = minCameraDistance;
   camera.position.copy(viewDirection);
