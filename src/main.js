@@ -804,7 +804,28 @@ function modelIndexFromUrl() {
 window.addEventListener("popstate", () => {
   changeModel(modelIndexFromUrl(), false);
 });
-changeModel(modelIndexFromUrl(), "replace");
+
+// Once the first model is on screen, fetch the others one at a time so later
+// switches are instant. Neighbours of the current model come first.
+async function prefetchRemainingModels() {
+  const count = MODELS.length;
+  const order = [];
+  for (let step = 1; step <= count / 2; step++) {
+    order.push((currentModelIndex + step) % count, (currentModelIndex - step + count) % count);
+  }
+  for (const index of new Set(order)) {
+    if (modelRequests.has(index)) continue;
+    await new Promise((resolve) =>
+      "requestIdleCallback" in window ? requestIdleCallback(resolve) : setTimeout(resolve, 200));
+    try {
+      await fetchModel(index);
+    } catch {
+      modelRequests.delete(index);
+    }
+  }
+}
+
+changeModel(modelIndexFromUrl(), "replace").then(prefetchRemainingModels);
 
 function animate() {
   requestAnimationFrame(animate);
