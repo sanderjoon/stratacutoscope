@@ -11,10 +11,6 @@ permissions:
   id-token: write
   actions: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
   # The github-pages environment only accepts deployments from main, so a push
   # to dev-baku just re-runs this workflow on main. The main run then bundles
@@ -22,6 +18,9 @@ jobs:
   trigger:
     if: github.ref == 'refs/heads/dev-baku'
     runs-on: ubuntu-latest
+    concurrency:
+      group: pages-trigger
+      cancel-in-progress: true
     steps:
       - name: Re-run deploy on main
         run: gh workflow run pages.yml --ref main -R "$GITHUB_REPOSITORY"
@@ -30,6 +29,9 @@ jobs:
 
   deploy:
     if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: pages
+      cancel-in-progress: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
