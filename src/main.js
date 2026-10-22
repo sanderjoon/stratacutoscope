@@ -187,6 +187,23 @@ const capGeometry = new THREE.PlaneGeometry(1, 1);
 const cameraDirectionForFit = new THREE.Vector3();
 let previousPointerTime = 0;
 const modelLoader = new GLTFLoader();
+// Parsed GLBs are kept so switching back to a model needs no network or parse work.
+const modelRequests = new Map();
+
+function fetchModel(index, onProgress) {
+  if (!modelRequests.has(index)) {
+    const request = modelLoader.loadAsync(MODELS[index].url, (event) => {
+      request.progress = event.total ? event.loaded / event.total : 0;
+      request.onProgress?.(request.progress);
+    });
+    request.progress = 0;
+    request.then(() => { request.ready = true; });
+    modelRequests.set(index, request);
+  }
+  const request = modelRequests.get(index);
+  request.onProgress = onProgress;
+  return request;
+}
 
 function setStatus(message, isError = false) {
   status.textContent = message;
@@ -624,7 +641,6 @@ function loadModel(gltf) {
     visibleMesh.renderOrder = index * 3 + 3;
     modelOrientation.add(visibleMesh);
     createCap(materialList[0], index * 3 + 2, vertexColor);
-    mesh.geometry.dispose();
   }
 
   modelExtremePoints = hullVertices(hullInput);
@@ -678,45 +694,42 @@ async function enableGyroscope() {
   }
 }
 
-function changeModel(index, historyMode = "push") {
+async function changeModel(index, historyMode = "push") {
   if (modelLoading || index < 0 || index >= MODELS.length) return;
   modelLoading = true;
   setModelNavigationDisabled(true);
-  setStatus(`Loading ${MODELS[index].name}…`);
-  modelLoader.load(
-    MODELS[index].url,
-    (gltf) => {
-      try {
-        loadModel(gltf);
-        currentModelIndex = index;
-        updateModelPickerSelection();
-        applyBackgroundColor(MODELS[index].backgroundColor);
-        if (historyMode) {
-          const url = new URL(window.location.href);
-          url.searchParams.set("model", MODELS[index].id);
-          window.history[`${historyMode}State`]({}, "", url);
-        }
-      } catch (error) {
-        console.error("Could not display the model:", error);
-        setStatus(`Could not display the model: ${error.message}`, true);
-      } finally {
-        modelLoading = false;
-        setModelNavigationDisabled(false);
-      }
-    },
-    (event) => {
-      if (event.total) {
-        const percent = Math.min(Math.round((event.loaded / event.total) * 100), 99);
-        setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
-      }
-    },
-    (error) => {
-      console.error("Could not load the model:", error);
-      setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
-      modelLoading = false;
-      setModelNavigationDisabled(false);
+  const request = fetchModel(index, (progress) => {
+    const percent = Math.min(Math.round(progress * 100), 99);
+    setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
+  });
+  if (!request.ready) setStatus(`Loading ${MODELS[index].name}…`);
+  let gltf;
+  try {
+    gltf = await request;
+  } catch (error) {
+    modelRequests.delete(index);
+    console.error("Could not load the model:", error);
+    setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
+  }
+  try {
+    if (!gltf) return;
+    loadModel(gltf);
+    currentModelIndex = index;
+    updateModelPickerSelection();
+    applyBackgroundColor(MODELS[index].backgroundColor);
+    if (historyMode) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("model", MODELS[index].id);
+      window.history[`${historyMode}State`]({}, "", url);
     }
-  );
+  } catch (error) {
+    console.error("Could not display the model:", error);
+    setStatus(`Could not display the model: ${error.message}`, true);
+  } finally {
+    request.onProgress = null;
+    modelLoading = false;
+    setModelNavigationDisabled(false);
+  }
 }
 
 function stopGyroscope() {
