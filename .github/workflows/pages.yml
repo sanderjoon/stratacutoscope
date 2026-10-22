@@ -2,27 +2,46 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev-baku]
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
+  # The github-pages environment only accepts deployments from main, so a push
+  # to dev-baku just re-runs this workflow on main. The main run then bundles
+  # dev-baku under /dev/ next to the production site.
+  trigger:
+    if: github.ref == 'refs/heads/dev-baku'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run deploy on main
+        run: gh workflow run pages.yml --ref main -R "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   deploy:
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out main (site root)
         uses: actions/checkout@v4
+      - name: Check out dev-baku (served at /dev/)
+        uses: actions/checkout@v4
+        with:
+          ref: dev-baku
+          path: dev
       - name: Set up Pages
         uses: actions/configure-pages@v5
       - name: Upload site
