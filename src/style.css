@@ -155,6 +155,14 @@ button {
 }
 
 button:hover { opacity: 0.65; }
+
+/* Inline icons inherit the button's text colour and size. */
+.icon {
+  display: block;
+  width: 1.15em;
+  height: 1.15em;
+  fill: currentColor;
+}
 button[aria-pressed="true"] { font-weight: 800; }
 
 button:disabled { cursor: wait; opacity: 0.55; }
