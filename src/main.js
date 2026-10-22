@@ -60,6 +60,18 @@ const previousModelButton = document.querySelector("#previous-model");
 const randomModelButton = document.querySelector("#random-model");
 const nextModelButton = document.querySelector("#next-model");
 const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
+// Fallback for browsers without CSS contrast-color(): pick black or white by
+// WCAG contrast. White wins once the background's relative luminance drops
+// below 0.1791, where both choices have equal contrast.
+function applyBackgroundColor(hex) {
+  const linear = new THREE.Color(hex);
+  const luminance = 0.2126 * linear.r + 0.7152 * linear.g + 0.0722 * linear.b;
+  const root = document.documentElement.style;
+  root.setProperty("--bg", hex);
+  root.setProperty("--ink-fallback", luminance < 0.1791 ? "white" : "black");
+  themeColorMeta.content = hex;
+}
 const canvas = document.querySelector("#scene");
 const isTouchDevice = navigator.maxTouchPoints > 0 ||
   window.matchMedia("(pointer: coarse)").matches;
@@ -676,8 +688,7 @@ function changeModel(index, historyMode = "push") {
         loadModel(gltf);
         currentModelIndex = index;
         updateModelPickerSelection();
-        document.body.style.backgroundColor = MODELS[index].backgroundColor;
-        themeColorMeta.content = MODELS[index].backgroundColor;
+        applyBackgroundColor(MODELS[index].backgroundColor);
         if (historyMode) {
           const url = new URL(window.location.href);
           url.searchParams.set("model", MODELS[index].id);
