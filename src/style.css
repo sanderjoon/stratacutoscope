@@ -85,6 +85,13 @@ canvas {
 }
 
 .about-content p { margin: 0 0 0.65em; }
+
+/* Instructions differ by primary input: touch devices vs mouse/trackpad. */
+.touch-only { display: none; }
+@media (pointer: coarse) {
+  .touch-only { display: block; }
+  .mouse-only { display: none; }
+}
 .about-content p:last-child { margin-bottom: 0; }
 .about-content small { font-size: inherit; }
 
