@@ -50,7 +50,6 @@ const VERTICAL_INERTIA_DAMPING = 4;
 const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
 const gyroscopeButton = document.querySelector("#gyroscope");
-const resetButton = document.querySelector("#reset");
 const aboutToggleButton = document.querySelector("#about-toggle");
 const aboutOverlay = document.querySelector("#about-overlay");
 const modelPicker = document.querySelector(".model-picker");
@@ -165,8 +164,6 @@ let minCameraDistance = 0;
 // Convex hull vertices of the model (local space); enough to find its extent in any direction.
 let modelExtremePoints = [];
 const extremePoint = new THREE.Vector3();
-let initialCamera;
-let initialTarget;
 let currentModelIndex = -1;
 let modelLoading = false;
 let motionEnabled = true;
@@ -282,8 +279,6 @@ function resize() {
   camera.updateProjectionMatrix();
   if (modelBounds.isEmpty() === false) {
     fitCameraToModel();
-    initialCamera = camera.position.clone();
-    initialTarget = controls.target.clone();
   }
 }
 
@@ -628,10 +623,7 @@ function loadModel(gltf) {
   controls.minDistance = minCameraDistance;
   camera.position.copy(viewDirection);
   resize();
-  initialCamera = camera.position.clone();
-  initialTarget = controls.target.clone();
   controls.update();
-  resetButton.disabled = false;
   updateCutPlane();
   setStatus("");
 }
@@ -771,17 +763,6 @@ aboutOverlay.addEventListener("click", () => {
 });
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !aboutOverlay.hidden) closeAboutOverlay();
-});
-
-resetButton.addEventListener("click", () => {
-  specimenPitch = 0;
-  specimenYaw = 0;
-  updateSpecimenRotation();
-  modelOrientation.quaternion.identity();
-  controls.target.copy(initialTarget);
-  camera.position.copy(initialCamera);
-  controls.update();
-  previousDeviceOrientation = null;
 });
 
 window.addEventListener("resize", resize);
