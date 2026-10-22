@@ -305,20 +305,26 @@ function hullVertices(points) {
   }
 }
 
-// Zooming in pushes the cut plane deeper. Stop zooming once the plane would
-// pass the far side of the model (as currently rotated), i.e. once nothing is left.
+// Zooming moves the cut plane through the model, so limit the zoom range to
+// where the plane is useful: zoomed in until the plane passes the far side of
+// the model (nothing left), zoomed out until it clears the near side (whole
+// model visible). Both depend on the model's current rotation.
 function limitZoomToModel() {
   if (modelBounds.isEmpty()) return;
   cameraDirection.copy(camera.position).sub(controls.target).normalize();
   let depthBehindTarget = 0;
+  let depthInFrontOfTarget = 0;
   for (const point of modelExtremePoints) {
     extremePoint.copy(point).applyMatrix4(modelOrientation.matrixWorld).sub(controls.target);
-    depthBehindTarget = Math.max(depthBehindTarget, -extremePoint.dot(cameraDirection));
+    const depth = extremePoint.dot(cameraDirection);
+    depthBehindTarget = Math.max(depthBehindTarget, -depth);
+    depthInFrontOfTarget = Math.max(depthInFrontOfTarget, depth);
   }
   controls.minDistance = Math.max(
     minCameraDistance,
     fitCameraDistance - depthBehindTarget / CUT_ZOOM_SENSITIVITY
   );
+  controls.maxDistance = fitCameraDistance + depthInFrontOfTarget / CUT_ZOOM_SENSITIVITY;
 }
 
 function updateCutPlane() {
@@ -577,7 +583,6 @@ function loadModel(gltf) {
   modelExtremePoints = hullVertices(hullInput);
   minCameraDistance = maxDimension * 0.03;
   controls.minDistance = minCameraDistance;
-  controls.maxDistance = maxDimension * 20;
   camera.position.copy(viewDirection);
   resize();
   initialCamera = camera.position.clone();
