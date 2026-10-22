@@ -43,7 +43,7 @@
   <body>
     <main>
       <p><b>How it's coded</b></p>
-      <p>A small, static 3D viewer. The page, styles, and application code are in <a href="./index.html">index.html</a>; no build step is used.</p>
+      <p>A small, static 3D viewer. The page is <a href="./index.html">index.html</a>, styles are in src/style.css, and the application code is in src/main.js. Vite bundles them into a static site.</p>
       <table>
         <thead>
           <tr><th>Part</th><th>What is used</th><th>Source / credit</th></tr>
@@ -51,11 +51,11 @@
         <tbody>
           <tr><td>3D models</td><td>.glb models made in Blender</td><td>Sander Joon</td></tr>
           <tr><td>About image</td><td>stratacutoscope.gif</td><td>Sander Joon</td></tr>
-          <tr><td>Page and styling</td><td>HTML and inline CSS</td><td>Project code</td></tr>
-          <tr><td>Viewer and controls</td><td>JavaScript, WebGL, pointer/touch input, and device orientation</td><td>Project code in index.html</td></tr>
-          <tr><td>3D library</td><td>Three.js 0.170.0, OrbitControls, and GLTFLoader</td><td>Loaded from jsDelivr CDN; Three.js is MIT-licensed</td></tr>
+          <tr><td>Page and styling</td><td>HTML and CSS (src/style.css)</td><td>Project code</td></tr>
+          <tr><td>Viewer and controls</td><td>JavaScript, WebGL, pointer/touch input, and device orientation</td><td>Project code in src/main.js</td></tr>
+          <tr><td>3D library</td><td>Three.js 0.170.0, OrbitControls, and GLTFLoader</td><td>npm package bundled with the site; Three.js is MIT-licensed</td></tr>
           <tr><td>Typeface</td><td>Inter, then Helvetica Neue or Arial fallback</td><td>System fonts; no web font is downloaded</td></tr>
-          <tr><td>Publishing</td><td>Static site</td><td>GitHub Pages</td></tr>
+          <tr><td>Build and publishing</td><td>Vite (yarn dev / yarn build), static output</td><td>GitHub Pages via GitHub Actions</td></tr>
           <tr><td>Code provenance</td><td>Whether any code was copied or AI-generated</td><td>Not recorded in the project, so its origin cannot be verified</td></tr>
         </tbody>
       </table>
