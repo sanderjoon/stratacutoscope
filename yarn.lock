@@ -309,6 +309,11 @@ fsevents@~2.3.2, fsevents@~2.3.3:
   resolved "https://registry.yarnpkg.com/fsevents/-/fsevents-2.3.3.tgz#cac6407785d03675a2a5e1a5305c697b347d90d6"
   integrity sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==
 
+n8ao@^2.0.1:
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/n8ao/-/n8ao-2.0.1.tgz#b533890ab9d3d84ddfad3e3d5b0ce4a3b09a1287"
+  integrity sha512-MoP1QKUdj4/3cKEnhFl917t0eQwWGER1l43ckz5mNOPyYWGRDGQbVoTOQz/VBvy01in6QVNG+AL6Xxx5AjZBYA==
+
 nanoid@^3.3.20:
   version "3.3.20"
   resolved "https://registry.yarnpkg.com/nanoid/-/nanoid-3.3.20.tgz#dfd4444d85aa10111ef66ba85ed72e08ba0855d8"
@@ -332,6 +337,11 @@ postcss@^8.5.3:
     nanoid "^3.3.20"
     picocolors "^1.1.1"
     source-map-js "^1.2.2"
+
+postprocessing@^6.39.5:
+  version "6.39.5"
+  resolved "https://registry.yarnpkg.com/postprocessing/-/postprocessing-6.39.5.tgz#8979edf3ad672fbc2d41b7c498df26b68d6e7a90"
+  integrity sha512-YmH+t74J2X1lwYjKzK/tgs9C9kqWWPB9JwZiDF5mEf4BdCEAmEFbO8lXBA7NM0/j4g+x6FgD/Tt5/kT7ogbEDA==
 
 rollup@^4.34.9:
   version "4.64.12"

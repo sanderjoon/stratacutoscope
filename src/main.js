@@ -4,6 +4,10 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
+import { N8AOPass } from "n8ao";
 const MODELS = [
   {
     name: "Horse",
@@ -37,6 +41,7 @@ const MODELS = [
   }
 ];
 const CUT_ZOOM_SENSITIVITY = 1;
+const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
 const GYROSCOPE_Y_SENSITIVITY = 10;
@@ -84,6 +89,21 @@ const pmremGenerator = new THREE.PMREMGenerator(renderer);
 scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.35;
 pmremGenerator.dispose();
+
+// Post-processing: screen-space ambient occlusion, then tone mapping / sRGB,
+// then SMAA (hardware MSAA does not apply once rendering goes through targets).
+// N8AO derives normals from depth, so the clipped model and the stencil caps
+// are occluded exactly as drawn.
+const composer = new EffectComposer(renderer);
+const aoPass = new N8AOPass(scene, camera, 1, 1);
+aoPass.configuration.stencil = true;
+aoPass.configuration.gammaCorrection = false;
+aoPass.configuration.intensity = 2;
+aoPass.configuration.distanceFalloff = 1;
+aoPass.configuration.halfRes = isTouchDevice;
+composer.addPass(aoPass);
+composer.addPass(new OutputPass());
+composer.addPass(new SMAAPass(1, 1));
 
 const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0);
 ambient.position.set(0, 0, 1);
@@ -244,6 +264,7 @@ function resize() {
   const height = canvas.clientHeight;
   if (!width || !height) return;
   renderer.setSize(width, height, false);
+  composer.setSize(width, height);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   if (modelBounds.isEmpty() === false) {
@@ -589,6 +610,7 @@ function loadModel(gltf) {
   }
 
   modelExtremePoints = hullVertices(hullInput);
+  aoPass.configuration.aoRadius = maxDimension * AO_RADIUS_RATIO;
   minCameraDistance = maxDimension * 0.03;
   controls.minDistance = minCameraDistance;
   camera.position.copy(viewDirection);
@@ -780,7 +802,7 @@ function animate() {
   limitZoomToModel();
   controls.update();
   updateCutPlane();
-  renderer.render(scene, camera);
+  composer.render();
 }
 resize();
 animate();
