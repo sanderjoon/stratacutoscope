@@ -400,6 +400,11 @@ function relaxToward(value, target, rate, delta) {
   return Math.abs(next - target) < 1e-4 ? target : next;
 }
 
+// applyDragRotation() subtracts yaw, so the motor turns in the negative direction.
+function motorVelocity() {
+  return motionEnabled ? -AUTO_ROTATION_SPEED : 0;
+}
+
 function applyDragRotation(horizontalAngle, verticalAngle) {
   specimenYaw -= horizontalAngle;
   specimenPitch -= verticalAngle;
@@ -418,7 +423,7 @@ canvas.addEventListener("pointerdown", (event) => {
   if (activePointers.size === 1) {
     previousPointerTime = event.timeStamp;
   } else {
-    angularVelocity.set(0, 0);
+    angularVelocity.set(motorVelocity(), 0);
   }
 });
 
@@ -434,8 +439,10 @@ canvas.addEventListener("pointermove", (event) => {
   const horizontalAngle = deltaX * DRAG_ROTATION_SENSITIVITY;
   const verticalAngle = deltaY * VERTICAL_DRAG_ROTATION_SENSITIVITY;
   applyDragRotation(horizontalAngle, verticalAngle);
+  // The finger's speed rides on top of the motor, so a flick along the spin
+  // speeds it up and one against it slows it down.
   angularVelocity.set(
-    THREE.MathUtils.clamp(horizontalAngle / elapsed, -12, 12),
+    motorVelocity() + THREE.MathUtils.clamp(horizontalAngle / elapsed, -12, 12),
     THREE.MathUtils.clamp(verticalAngle / elapsed, -12, 12)
   );
   previousPointerTime = event.timeStamp;
@@ -443,7 +450,7 @@ canvas.addEventListener("pointermove", (event) => {
 
 const finishPointer = (event) => {
   activePointers.delete(event.pointerId);
-  if (activePointers.size) angularVelocity.set(0, 0);
+  if (activePointers.size) angularVelocity.set(motorVelocity(), 0);
 };
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
@@ -829,13 +836,14 @@ function animate() {
   const now = performance.now();
   const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
   lastFrameTime = now;
-  // While nobody is holding the model it behaves like a turntable: the spin
-  // relaxes exponentially toward the motor speed (zero when paused). A flick
-  // therefore eases back into the auto-rotation, and pause coasts to a stop.
-  if (!activePointers.size) {
-    // applyDragRotation() subtracts yaw, so the motor turns in the negative direction.
-    const motorVelocity = motionEnabled ? -AUTO_ROTATION_SPEED : 0;
-    angularVelocity.x = relaxToward(angularVelocity.x, motorVelocity, HORIZONTAL_INERTIA_DAMPING, delta);
+  // The model behaves like a turntable. While nobody holds it, the spin relaxes
+  // exponentially toward the motor speed (zero when paused), so a flick eases
+  // back into the auto-rotation and pause coasts to a stop. While a finger is
+  // on it the motor keeps turning underneath; the drag is added on top.
+  if (activePointers.size) {
+    applyDragRotation(motorVelocity() * delta, 0);
+  } else {
+    angularVelocity.x = relaxToward(angularVelocity.x, motorVelocity(), HORIZONTAL_INERTIA_DAMPING, delta);
     angularVelocity.y = relaxToward(angularVelocity.y, 0, VERTICAL_INERTIA_DAMPING, delta);
     if (angularVelocity.lengthSq() > 0) {
       applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
