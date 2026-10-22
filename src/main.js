@@ -14,9 +14,8 @@ const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
 const FOG_DEPTH_RATIO = 4; // of the model's radius; how far behind the cut plane the haze is total
-const INTRO_DOLLY_RATIO = 1.5; // of the model's radius; how far back the camera starts
 const INTRO_HAZE_RATIO = 0.3; // of the model's radius; fog depth at the start of the intro
-const INTRO_DURATION = 1800; // ms
+const INTRO_DURATION = 2000; // ms
 const SLIDE_OUT_DURATION = 180; // ms
 const SLIDE_IN_DURATION = 420; // ms
 const SLIDE_TRAVEL = 0.3; // of the visible half-height; the fade does the rest
@@ -186,9 +185,7 @@ let modelExtremePoints = [];
 // Distance from the model's centre to its farthest point; the cut plane clears
 // the whole model in every orientation once it is this far from the target.
 let modelRadius = 0;
-// Intro: a render-only camera offset along the view direction, and how far
-// the haze is pulled in toward the cut plane (1 = right up to it).
-let cameraDolly = 0;
+// Intro: how far the haze is pulled in toward the cut plane (1 = right up to it).
 let introHaze = 0;
 let introTween = null;
 // Model switch: the specimen's screen-vertical offset (positive = up).
@@ -472,18 +469,33 @@ function switchDirection(index) {
   return forward <= MODELS.length / 2 ? 1 : -1;
 }
 
-// First appearance: the camera starts a little further back with the haze
-// pulled right up to the cut, then dollies in as the haze recedes.
+// First appearance: the camera starts at the zoomed-out limit, where the cut
+// plane clears the whole model, with the haze pulled right up to the cut. It
+// then zooms in to the fit, so the slice sweeps into the model as the haze recedes.
 function playIntro() {
   introTween?.cancel();
-  const startDolly = modelRadius * INTRO_DOLLY_RATIO;
+  const startDistance = controls.maxDistance;
   introTween = tween(INTRO_DURATION, easeOutCubic, (progress) => {
-    cameraDolly = startDolly * (1 - progress);
     introHaze = 1 - progress;
     updateDistanceFade();
+    cameraDirection.copy(camera.position).sub(controls.target).normalize();
+    camera.position.copy(controls.target).addScaledVector(
+      cameraDirection,
+      THREE.MathUtils.lerp(startDistance, fitCameraDistance, progress)
+    );
   });
   return introTween;
 }
+
+// Any zoom or drag takes over from the intro.
+function endIntro() {
+  if (!introTween) return;
+  introTween.cancel();
+  introTween = null;
+  introHaze = 0;
+  updateDistanceFade();
+}
+canvas.addEventListener("wheel", endIntro, { passive: true });
 
 function updateCutPlane() {
   cameraDirection.copy(camera.position).sub(controls.target).normalize();
@@ -522,6 +534,7 @@ function updateSpecimenRotation() {
 }
 
 canvas.addEventListener("pointerdown", (event) => {
+  endIntro();
   activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   if (activePointers.size === 1) {
     previousPointerTime = event.timeStamp;
@@ -965,11 +978,7 @@ function animate() {
   updateCutPlane();
   slideAxis.set(0, 1, 0).applyQuaternion(camera.quaternion);
   specimen.position.copy(slideAxis).multiplyScalar(slideOffset);
-  // The dolly is applied for rendering only, so OrbitControls never sees it.
-  camera.position.addScaledVector(cameraDirection, cameraDolly);
-  camera.updateMatrixWorld();
   composer.render();
-  camera.position.addScaledVector(cameraDirection, -cameraDolly);
 }
 resize();
 animate();
