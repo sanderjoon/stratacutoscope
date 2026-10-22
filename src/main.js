@@ -7,11 +7,13 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
+const FOG_DEPTH_RATIO = 4; // of the model's radius; how far behind the cut plane the haze is total
 const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
@@ -50,6 +52,8 @@ gyroscopeButton.hidden = !isTouchDevice || !("DeviceOrientationEvent" in window)
 // The page background shows through a transparent canvas, so the per-model
 // background colour is exact and unaffected by tone mapping in post-processing.
 const scene = new THREE.Scene();
+// Only near/far are used: fadeWithDistance() turns fog into transparency.
+scene.fog = new THREE.Fog(0x000000, 1, 2);
 
 const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
 camera.up.set(0, 1, 0);
@@ -86,7 +90,39 @@ aoPass.configuration.distanceFalloff = 1;
 aoPass.configuration.halfRes = isTouchDevice;
 composer.addPass(aoPass);
 composer.addPass(new OutputPass());
+// Fragments carry a distance-based alpha (see fadeWithDistance). The canvas is
+// composited premultiplied, so multiply colour by alpha once tone mapping is done.
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    varying vec2 vUv;
+    void main() {
+      vec4 texel = texture2D(tDiffuse, vUv);
+      gl_FragColor = vec4(texel.rgb * texel.a, texel.a);
+    }`
+}));
 composer.addPass(new SMAAPass(1, 1));
+
+// Distance haze in the page's background colour. Blending toward a fog colour
+// would be shifted by tone mapping, so instead the fragment's alpha falls off
+// between fogNear and fogFar and the CSS background shows through.
+function fadeWithDistance(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <fog_fragment>",
+      "#ifdef USE_FOG\n  gl_FragColor.a *= 1.0 - smoothstep(fogNear, fogFar, vFogDepth);\n#endif"
+    );
+  };
+  material.customProgramCacheKey = () => "fade-with-distance";
+  return material;
+}
 
 const ambient = new THREE.HemisphereLight(0xfff8ec, 0x77736c, 0);
 ambient.position.set(0, 0, 1);
@@ -311,6 +347,7 @@ function fitCameraToModel() {
   camera.lookAt(controls.target);
   fitCameraDistance = camera.position.distanceTo(controls.target);
   limitZoomToModel();
+  updateDistanceFade();
 }
 
 function hullVertices(points) {
@@ -347,6 +384,13 @@ function limitZoomToModel() {
     fitCameraDistance - modelRadius / CUT_ZOOM_SENSITIVITY
   );
   controls.maxDistance = fitCameraDistance + (modelRadius * ZOOM_OUT_MARGIN) / CUT_ZOOM_SENSITIVITY;
+}
+
+// The cut plane always sits fitCameraDistance from the camera (zoom and cut
+// move together), so the haze starts exactly at the cut and deepens behind it.
+function updateDistanceFade() {
+  scene.fog.near = fitCameraDistance;
+  scene.fog.far = fitCameraDistance + modelRadius * FOG_DEPTH_RATIO;
 }
 
 function updateCutPlane() {
@@ -503,7 +547,7 @@ function createStencilGeometry(geometry) {
 }
 
 function createCap(meshMaterial, renderOrder, vertexColor) {
-  const capMaterial = meshMaterial.clone();
+  const capMaterial = fadeWithDistance(meshMaterial.clone());
   capMaterial.clippingPlanes = [];
   capMaterial.vertexColors = false;
   capMaterial.color.multiply(vertexColor);
@@ -589,23 +633,14 @@ function loadModel(gltf) {
     }
     const stencilGeometry = createStencilGeometry(geometry);
     const material = Array.isArray(mesh.material)
-      ? mesh.material.map((item) => {
-          const clone = item.clone();
-          clone.vertexColors = Boolean(attributeColor);
-          clone.clippingPlanes = [cutPlane];
-          return clone;
-        })
+      ? mesh.material.map((item) => item.clone())
       : mesh.material.clone();
-    if (Array.isArray(material)) {
-      material.forEach((item) => {
-        item.vertexColors = Boolean(attributeColor);
-        item.clippingPlanes = [cutPlane];
-      });
-    } else {
-      material.vertexColors = Boolean(attributeColor);
-      material.clippingPlanes = [cutPlane];
-    }
     const materialList = Array.isArray(material) ? material : [material];
+    for (const item of materialList) {
+      item.vertexColors = Boolean(attributeColor);
+      item.clippingPlanes = [cutPlane];
+      fadeWithDistance(item);
+    }
     modelOrientation.add(createStencilGroup(stencilGeometry, index * 3 + 1));
     const visibleMesh = new THREE.Mesh(geometry, material);
     visibleMesh.renderOrder = index * 3 + 3;
