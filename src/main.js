@@ -707,11 +707,14 @@ async function changeModel(index, historyMode = "push") {
     setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
   });
   if (!request.ready) setStatus(`Loading ${MODELS[index].name}…`);
+  // Colour the page straight away so the switch feels immediate even while the GLB downloads.
+  applyBackgroundColor(MODELS[index].backgroundColor);
   let gltf;
   try {
     gltf = await request;
   } catch (error) {
     modelRequests.delete(index);
+    if (currentModelIndex >= 0) applyBackgroundColor(MODELS[currentModelIndex].backgroundColor);
     console.error("Could not load the model:", error);
     setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
   }
@@ -720,7 +723,6 @@ async function changeModel(index, historyMode = "push") {
     loadModel(gltf);
     currentModelIndex = index;
     updateModelPickerSelection();
-    applyBackgroundColor(MODELS[index].backgroundColor);
     if (historyMode) {
       const url = new URL(window.location.href);
       url.searchParams.set("model", MODELS[index].id);
