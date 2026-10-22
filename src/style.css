@@ -25,6 +25,8 @@ body {
   overflow: hidden;
   color: var(--ink);
   background: var(--bg);
+  /* Each model has its own background; ease between them on a switch. */
+  transition: background-color 0.6s ease, color 0.6s ease;
 }
 
 .viewer {
@@ -158,6 +160,7 @@ button {
   cursor: pointer;
   letter-spacing: 0.08em;
   touch-action: manipulation;
+  transition: color 0.6s ease;
 }
 
 button:hover { opacity: 0.65; }
@@ -182,7 +185,7 @@ button:hover { opacity: 0.65; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #random-model .icon { transition: none; }
+  body, button, #random-model .icon { transition: none; }
 }
 button[aria-pressed="true"] { font-weight: 800; }
 
