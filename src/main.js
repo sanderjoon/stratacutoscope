@@ -14,6 +14,9 @@ const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
 const FOG_DEPTH_RATIO = 4; // of the model's radius; how far behind the cut plane the haze is total
+const INTRO_DOLLY_RATIO = 1.5; // of the model's radius; how far back the camera starts
+const INTRO_HAZE_RATIO = 0.3; // of the model's radius; fog depth at the start of the intro
+const INTRO_DURATION = 1800; // ms
 const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
@@ -175,6 +178,12 @@ let modelExtremePoints = [];
 // Distance from the model's centre to its farthest point; the cut plane clears
 // the whole model in every orientation once it is this far from the target.
 let modelRadius = 0;
+// Intro: a render-only camera offset along the view direction, and how far
+// the haze is pulled in toward the cut plane (1 = right up to it).
+let cameraDolly = 0;
+let introHaze = 0;
+let introTween = null;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let currentModelIndex = -1;
 let modelLoading = false;
 let motionEnabled = true;
@@ -390,7 +399,52 @@ function limitZoomToModel() {
 // move together), so the haze starts exactly at the cut and deepens behind it.
 function updateDistanceFade() {
   scene.fog.near = fitCameraDistance;
-  scene.fog.far = fitCameraDistance + modelRadius * FOG_DEPTH_RATIO;
+  scene.fog.far = fitCameraDistance +
+    modelRadius * THREE.MathUtils.lerp(FOG_DEPTH_RATIO, INTRO_HAZE_RATIO, introHaze);
+}
+
+// Frame-driven tweens. update() receives eased progress 0..1 and is called once
+// synchronously; the promise resolves true on completion, false if cancelled.
+const activeTweens = new Set();
+const easeOutCubic = (t) => 1 - (1 - t) ** 3;
+const easeInCubic = (t) => t * t * t;
+function tween(duration, easing, update) {
+  if (reducedMotion.matches) duration = 0;
+  const start = performance.now();
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  const entry = {
+    step(now) {
+      const progress = duration ? Math.min((now - start) / duration, 1) : 1;
+      update(easing(progress));
+      if (progress === 1) {
+        activeTweens.delete(entry);
+        resolve(true);
+      }
+    },
+    cancel() {
+      if (!activeTweens.has(entry)) return;
+      activeTweens.delete(entry);
+      resolve(false);
+    }
+  };
+  activeTweens.add(entry);
+  update(easing(0));
+  promise.cancel = entry.cancel;
+  return promise;
+}
+
+// First appearance: the camera starts a little further back with the haze
+// pulled right up to the cut, then dollies in as the haze recedes.
+function playIntro() {
+  introTween?.cancel();
+  const startDolly = modelRadius * INTRO_DOLLY_RATIO;
+  introTween = tween(INTRO_DURATION, easeOutCubic, (progress) => {
+    cameraDolly = startDolly * (1 - progress);
+    introHaze = 1 - progress;
+    updateDistanceFade();
+  });
+  return introTween;
 }
 
 function updateCutPlane() {
@@ -722,8 +776,10 @@ async function changeModel(index, historyMode = "push") {
   }
   try {
     if (!gltf) return;
+    const isFirstModel = currentModelIndex < 0;
     loadModel(gltf);
     currentModelIndex = index;
+    if (isFirstModel) playIntro();
     updateModelPickerSelection();
     if (historyMode) {
       const url = new URL(window.location.href);
@@ -853,9 +909,14 @@ function animate() {
       applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
     }
   }
+  for (const entry of [...activeTweens]) entry.step(now);
   controls.update();
   updateCutPlane();
+  // The dolly is applied for rendering only, so OrbitControls never sees it.
+  camera.position.addScaledVector(cameraDirection, cameraDolly);
+  camera.updateMatrixWorld();
   composer.render();
+  camera.position.addScaledVector(cameraDirection, -cameraDolly);
 }
 resize();
 animate();
