@@ -35,7 +35,6 @@ const MODELS = [
   }
 ];
 const CUT_ZOOM_SENSITIVITY = 0.4;
-const CUT_DRAG_SCREEN_TRAVEL = 1.5;
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
 const GYROSCOPE_Y_SENSITIVITY = 10;
@@ -109,9 +108,7 @@ controls.target.set(0, 0, 0);
 
 let fitDistance = 4;
 let fitCameraDistance = 0;
-let cutDragOffset = 0;
 let previousTwoFingerCenter = null;
-let previousThreeFingerCenterY = null;
 const activePointers = new Map();
 const angularVelocity = new THREE.Vector2();
 let specimenPitch = 0;
@@ -284,7 +281,7 @@ function fitCameraToModel() {
 function updateCutPlane() {
   cameraDirection.copy(camera.position).sub(controls.target).normalize();
   const zoomInDistance = fitCameraDistance - camera.position.distanceTo(controls.target);
-  const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY + cutDragOffset;
+  const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY;
   cutPoint.copy(controls.target).addScaledVector(cameraDirection, cutDistance);
   cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.clone().negate(), cutPoint);
   capGroup.position.copy(cutPoint);
@@ -349,9 +346,6 @@ canvas.addEventListener("touchstart", (event) => {
         y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
       }
     : null;
-  previousThreeFingerCenterY = event.touches.length === 3
-    ? (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3
-    : null;
 }, { passive: true });
 
 canvas.addEventListener("touchmove", (event) => {
@@ -375,21 +369,10 @@ canvas.addEventListener("touchmove", (event) => {
   } else {
     previousTwoFingerCenter = null;
   }
-  if (event.touches.length !== 3) {
-    previousThreeFingerCenterY = null;
-    return;
-  }
-  const centerY = (event.touches[0].clientY + event.touches[1].clientY + event.touches[2].clientY) / 3;
-  if (previousThreeFingerCenterY !== null && canvas.clientHeight > 0) {
-    cutDragOffset += (centerY - previousThreeFingerCenterY) *
-      fitDistance * CUT_DRAG_SCREEN_TRAVEL / canvas.clientHeight;
-  }
-  previousThreeFingerCenterY = centerY;
 }, { passive: true });
 
 canvas.addEventListener("touchend", (event) => {
   if (event.touches.length !== 2) previousTwoFingerCenter = null;
-  if (event.touches.length < 3) previousThreeFingerCenterY = null;
 }, { passive: true });
 
 const capGroup = new THREE.Group();
@@ -486,7 +469,6 @@ function loadModel(gltf) {
   specimenYaw = 0;
   updateSpecimenRotation();
   modelOrientation.quaternion.identity();
-  cutDragOffset = 0;
   controls.target.set(0, 0, 0);
   camera.position.copy(viewDirection);
 
@@ -696,7 +678,6 @@ resetButton.addEventListener("click", () => {
   specimenYaw = 0;
   updateSpecimenRotation();
   modelOrientation.quaternion.identity();
-  cutDragOffset = 0;
   controls.target.copy(initialTarget);
   camera.position.copy(initialCamera);
   controls.update();
