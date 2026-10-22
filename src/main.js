@@ -42,6 +42,8 @@ const MODELS = [
 ];
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
+const AUTO_ROTATION_SPEED = 0.65; // rad/s
+const AUTO_ROTATION_RAMP = 1.2; // seconds to spin up or down, like a turntable
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
 const GYROSCOPE_Y_SENSITIVITY = 10;
@@ -167,6 +169,7 @@ const extremePoint = new THREE.Vector3();
 let currentModelIndex = -1;
 let modelLoading = false;
 let motionEnabled = true;
+let autoRotationSpeed = AUTO_ROTATION_SPEED;
 let previousDeviceOrientation = null;
 let gyroscopeEnabled = false;
 let lastFrameTime = 0;
@@ -788,8 +791,13 @@ function animate() {
   const now = performance.now();
   const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
   lastFrameTime = now;
-  if (motionEnabled) {
-    specimenYaw += delta * 0.65;
+  // Approach the target speed at a constant rate so play/pause spin up and
+  // coast down instead of switching instantly.
+  const targetSpeed = motionEnabled ? AUTO_ROTATION_SPEED : 0;
+  const maxChange = AUTO_ROTATION_SPEED / AUTO_ROTATION_RAMP * delta;
+  autoRotationSpeed += THREE.MathUtils.clamp(targetSpeed - autoRotationSpeed, -maxChange, maxChange);
+  if (autoRotationSpeed > 0) {
+    specimenYaw += delta * autoRotationSpeed;
     updateSpecimenRotation();
   }
   if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
