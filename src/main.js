@@ -42,11 +42,12 @@ const MODELS = [
 ];
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
-const AUTO_ROTATION_SPEED = 0.65; // rad/s
-const AUTO_ROTATION_RAMP = 1.2; // seconds to spin up or down, like a turntable
+const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
 const GYROSCOPE_Y_SENSITIVITY = 10;
+// Rates (1/s) at which the free-spinning velocity relaxes toward the motor
+// speed. They shape drag inertia and play/pause spin-up/coast-down alike.
 const HORIZONTAL_INERTIA_DAMPING = 1.1;
 const VERTICAL_INERTIA_DAMPING = 4;
 const status = document.querySelector("#status");
@@ -153,7 +154,9 @@ let fitDistance = 4;
 let fitCameraDistance = 0;
 let previousTwoFingerCenter = null;
 const activePointers = new Map();
-const angularVelocity = new THREE.Vector2();
+// Current spin, in the units applyDragRotation() takes (x: yaw, y: pitch).
+// A drag sets it directly; otherwise it relaxes toward the motor speed.
+const angularVelocity = new THREE.Vector2(-AUTO_ROTATION_SPEED, 0);
 let specimenPitch = 0;
 let specimenYaw = 0;
 const pitchRotation = new THREE.Quaternion();
@@ -169,7 +172,6 @@ const extremePoint = new THREE.Vector3();
 let currentModelIndex = -1;
 let modelLoading = false;
 let motionEnabled = true;
-let autoRotationSpeed = AUTO_ROTATION_SPEED;
 let previousDeviceOrientation = null;
 let gyroscopeEnabled = false;
 let lastFrameTime = 0;
@@ -378,6 +380,11 @@ function updateCutPlane() {
   capGroup.scale.setScalar(fitDistance * 4);
   capFillLight.position.copy(camera.position);
   capFillLight.target.position.copy(controls.target);
+}
+
+function relaxToward(value, target, rate, delta) {
+  const next = target + (value - target) * Math.exp(-rate * delta);
+  return Math.abs(next - target) < 1e-4 ? target : next;
 }
 
 function applyDragRotation(horizontalAngle, verticalAngle) {
@@ -791,19 +798,17 @@ function animate() {
   const now = performance.now();
   const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
   lastFrameTime = now;
-  // Approach the target speed at a constant rate so play/pause spin up and
-  // coast down instead of switching instantly.
-  const targetSpeed = motionEnabled ? AUTO_ROTATION_SPEED : 0;
-  const maxChange = AUTO_ROTATION_SPEED / AUTO_ROTATION_RAMP * delta;
-  autoRotationSpeed += THREE.MathUtils.clamp(targetSpeed - autoRotationSpeed, -maxChange, maxChange);
-  if (autoRotationSpeed > 0) {
-    specimenYaw += delta * autoRotationSpeed;
-    updateSpecimenRotation();
-  }
-  if (!activePointers.size && angularVelocity.lengthSq() > 0.0001) {
-    applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
-    angularVelocity.x *= Math.exp(-HORIZONTAL_INERTIA_DAMPING * delta);
-    angularVelocity.y *= Math.exp(-VERTICAL_INERTIA_DAMPING * delta);
+  // While nobody is holding the model it behaves like a turntable: the spin
+  // relaxes exponentially toward the motor speed (zero when paused). A flick
+  // therefore eases back into the auto-rotation, and pause coasts to a stop.
+  if (!activePointers.size) {
+    // applyDragRotation() subtracts yaw, so the motor turns in the negative direction.
+    const motorVelocity = motionEnabled ? -AUTO_ROTATION_SPEED : 0;
+    angularVelocity.x = relaxToward(angularVelocity.x, motorVelocity, HORIZONTAL_INERTIA_DAMPING, delta);
+    angularVelocity.y = relaxToward(angularVelocity.y, 0, VERTICAL_INERTIA_DAMPING, delta);
+    if (angularVelocity.lengthSq() > 0) {
+      applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
+    }
   }
   limitZoomToModel();
   controls.update();
