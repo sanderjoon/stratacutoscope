@@ -8,38 +8,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { N8AOPass } from "n8ao";
-const MODELS = [
-  {
-    name: "Horse",
-    id: "horse",
-    url: "./assets/models/horse.glb",
-    backgroundColor: "#760DD9"
-  },
-  {
-    name: "Handshake",
-    id: "handshake",
-    url: "./assets/models/handshake.glb",
-    backgroundColor: "#0d9d36"
-  },
-  {
-    name: "Rotating Head",
-    id: "rotatinghead",
-    url: "./assets/models/rotating-head.glb",
-    backgroundColor: "#9E4210"
-  },
-  {
-    name: "Dialogue",
-    id: "dialogue",
-    url: "./assets/models/dialogue.glb",
-    backgroundColor: "#506666"
-  },
-  {
-    name: "Bouncing Balls",
-    id: "bouncingballs",
-    url: "./assets/models/bouncing-balls.glb",
-    backgroundColor: "#000000"
-  }
-];
+import { MODELS, inkColorFor } from "./models.js";
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
@@ -68,11 +37,9 @@ const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 // WCAG contrast. White wins once the background's relative luminance drops
 // below 0.1791, where both choices have equal contrast.
 function applyBackgroundColor(hex) {
-  const linear = new THREE.Color(hex);
-  const luminance = 0.2126 * linear.r + 0.7152 * linear.g + 0.0722 * linear.b;
   const root = document.documentElement.style;
   root.setProperty("--bg", hex);
-  root.setProperty("--ink-fallback", luminance < 0.1791 ? "white" : "black");
+  root.setProperty("--ink-fallback", inkColorFor(hex));
   themeColorMeta.content = hex;
 }
 const canvas = document.querySelector("#scene");
