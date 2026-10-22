@@ -42,6 +42,7 @@ const MODELS = [
 ];
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
+const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
 const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
@@ -168,7 +169,9 @@ const modelBounds = new THREE.Box3();
 let minCameraDistance = 0;
 // Convex hull vertices of the model (local space); enough to find its extent in any direction.
 let modelExtremePoints = [];
-const extremePoint = new THREE.Vector3();
+// Distance from the model's centre to its farthest point; the cut plane clears
+// the whole model in every orientation once it is this far from the target.
+let modelRadius = 0;
 let currentModelIndex = -1;
 let modelLoading = false;
 let motionEnabled = true;
@@ -340,6 +343,7 @@ function fitCameraToModel() {
   );
   camera.lookAt(controls.target);
   fitCameraDistance = camera.position.distanceTo(controls.target);
+  limitZoomToModel();
 }
 
 function hullVertices(points) {
@@ -368,22 +372,14 @@ function hullVertices(points) {
 // where the plane is useful: zoomed in until the plane passes the far side of
 // the model (nothing left), zoomed out until it clears the near side (whole
 // model visible). Both depend on the model's current rotation.
+// The zoom range is fixed per model so rotating never shifts the camera.
 function limitZoomToModel() {
   if (modelBounds.isEmpty()) return;
-  cameraDirection.copy(camera.position).sub(controls.target).normalize();
-  let depthBehindTarget = 0;
-  let depthInFrontOfTarget = 0;
-  for (const point of modelExtremePoints) {
-    extremePoint.copy(point).applyMatrix4(modelOrientation.matrixWorld).sub(controls.target);
-    const depth = extremePoint.dot(cameraDirection);
-    depthBehindTarget = Math.max(depthBehindTarget, -depth);
-    depthInFrontOfTarget = Math.max(depthInFrontOfTarget, depth);
-  }
   controls.minDistance = Math.max(
     minCameraDistance,
-    fitCameraDistance - depthBehindTarget / CUT_ZOOM_SENSITIVITY
+    fitCameraDistance - modelRadius / CUT_ZOOM_SENSITIVITY
   );
-  controls.maxDistance = fitCameraDistance + depthInFrontOfTarget / CUT_ZOOM_SENSITIVITY;
+  controls.maxDistance = fitCameraDistance + (modelRadius * ZOOM_OUT_MARGIN) / CUT_ZOOM_SENSITIVITY;
 }
 
 function updateCutPlane() {
@@ -644,6 +640,7 @@ function loadModel(gltf) {
   }
 
   modelExtremePoints = hullVertices(hullInput);
+  modelRadius = Math.max(...modelExtremePoints.map((point) => point.length()));
   aoPass.configuration.aoRadius = maxDimension * AO_RADIUS_RATIO;
   minCameraDistance = maxDimension * 0.03;
   controls.minDistance = minCameraDistance;
@@ -844,7 +841,6 @@ function animate() {
       applyDragRotation(angularVelocity.x * delta, angularVelocity.y * delta);
     }
   }
-  limitZoomToModel();
   controls.update();
   updateCutPlane();
   composer.render();
