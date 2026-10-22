@@ -220,25 +220,26 @@ const modelLoader = new GLTFLoader();
 // Parsed GLBs are kept so switching back to a model needs no network or parse work.
 const modelRequests = new Map();
 
-function fetchModel(index, onProgress) {
+function fetchModel(index) {
   if (!modelRequests.has(index)) {
-    const request = modelLoader.loadAsync(MODELS[index].url, (event) => {
-      request.progress = event.total ? event.loaded / event.total : 0;
-      request.onProgress?.(request.progress);
-    });
-    request.progress = 0;
+    const request = modelLoader.loadAsync(MODELS[index].url);
     request.then(() => { request.ready = true; });
     modelRequests.set(index, request);
   }
-  const request = modelRequests.get(index);
-  request.onProgress = onProgress;
-  return request;
+  return modelRequests.get(index);
 }
 
+const statusText = status.querySelector(".status-text");
 function setStatus(message, isError = false) {
-  status.textContent = message;
+  statusText.textContent = message;
   status.dataset.error = String(isError);
-  status.hidden = !message;
+  status.hidden = !message && status.dataset.loading !== "true";
+}
+
+// The loading indicator is the animated dots in the HTML; this only shows or hides them.
+function setLoading(loading) {
+  status.dataset.loading = String(loading);
+  status.hidden = !loading && !statusText.textContent;
 }
 
 function setModelNavigationDisabled(disabled) {
@@ -820,11 +821,9 @@ async function changeModel(index, historyMode = "push", direction = 0) {
   const exit = isFirstModel
     ? null
     : slideTo(-direction * slideDistance(), 0, SLIDE_OUT_DURATION, easeInCubic);
-  const request = fetchModel(index, (progress) => {
-    const percent = Math.min(Math.round(progress * 100), 99);
-    setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
-  });
-  if (!request.ready) setStatus(`Loading ${MODELS[index].name}…`);
+  const request = fetchModel(index);
+  setStatus("");
+  if (!request.ready) setLoading(true);
   // Name and colour the page straight away so the switch feels immediate even while the GLB downloads.
   showModelIdentity(index);
   let gltf;
@@ -859,7 +858,7 @@ async function changeModel(index, historyMode = "push", direction = 0) {
     console.error("Could not display the model:", error);
     setStatus(`Could not display the model: ${error.message}`, true);
   } finally {
-    request.onProgress = null;
+    setLoading(false);
     modelLoading = false;
     setModelNavigationDisabled(false);
   }

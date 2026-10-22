@@ -10,7 +10,10 @@
   <body>
     <main class="viewer" aria-label="Interactive 3D model viewer">
       <canvas id="scene" aria-label="3D model. Drag to rotate."></canvas>
-      <div class="status" id="status" role="status" aria-live="polite">Loading model…</div>
+      <div class="status" id="status" role="status" aria-live="polite" aria-label="Loading" data-loading="true">
+        <span class="status-dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span>
+        <span class="status-text"></span>
+      </div>
       <div class="footer">
         <div class="actions">
           <button id="motion" type="button" aria-pressed="true" aria-label="Pause rotation" title="Pause rotation" data-playing="true">
