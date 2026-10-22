@@ -17,6 +17,8 @@ const FOG_DEPTH_RATIO = 4; // of the model's radius; how far behind the cut plan
 const INTRO_DOLLY_RATIO = 1.5; // of the model's radius; how far back the camera starts
 const INTRO_HAZE_RATIO = 0.3; // of the model's radius; fog depth at the start of the intro
 const INTRO_DURATION = 1800; // ms
+const SLIDE_OUT_DURATION = 320; // ms
+const SLIDE_IN_DURATION = 560; // ms
 const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
@@ -183,6 +185,10 @@ let modelRadius = 0;
 let cameraDolly = 0;
 let introHaze = 0;
 let introTween = null;
+// Model switch: the specimen's screen-vertical offset (positive = up).
+let slideOffset = 0;
+let slideTween = null;
+const slideAxis = new THREE.Vector3();
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let currentModelIndex = -1;
 let modelLoading = false;
@@ -432,6 +438,29 @@ function tween(duration, easing, update) {
   update(easing(0));
   promise.cancel = entry.cancel;
   return promise;
+}
+
+// How far the model must move vertically to leave the viewport entirely.
+function slideExitDistance() {
+  const halfHeight = camera.position.distanceTo(controls.target) *
+    Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  return halfHeight + modelRadius;
+}
+
+function slideTo(target, duration, easing) {
+  slideTween?.cancel();
+  const from = slideOffset;
+  slideTween = tween(duration, easing, (progress) => {
+    slideOffset = THREE.MathUtils.lerp(from, target, progress);
+  });
+  return slideTween;
+}
+
+// +1 when the new model comes after the current one (it enters from above),
+// -1 when it comes before. Picked by the shorter way round the list.
+function switchDirection(index) {
+  const forward = (index - currentModelIndex + MODELS.length) % MODELS.length;
+  return forward <= MODELS.length / 2 ? 1 : -1;
 }
 
 // First appearance: the camera starts a little further back with the haze
@@ -754,10 +783,16 @@ async function enableGyroscope() {
   }
 }
 
-async function changeModel(index, historyMode = "push") {
+async function changeModel(index, historyMode = "push", direction = 0) {
   if (modelLoading || index < 0 || index >= MODELS.length) return;
   modelLoading = true;
   setModelNavigationDisabled(true);
+  const isFirstModel = currentModelIndex < 0;
+  direction ||= isFirstModel ? 1 : switchDirection(index);
+  // The current model drops out while the next one is fetched.
+  const exit = isFirstModel
+    ? null
+    : slideTo(-direction * slideExitDistance(), SLIDE_OUT_DURATION, easeInCubic);
   const request = fetchModel(index, (progress) => {
     const percent = Math.min(Math.round(progress * 100), 99);
     setStatus(`Loading ${MODELS[index].name}… ${percent}%`);
@@ -771,15 +806,21 @@ async function changeModel(index, historyMode = "push") {
   } catch (error) {
     modelRequests.delete(index);
     if (currentModelIndex >= 0) applyBackgroundColor(MODELS[currentModelIndex].backgroundColor);
+    if (exit) slideTo(0, SLIDE_IN_DURATION, easeOutCubic);
     console.error("Could not load the model:", error);
     setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
   }
   try {
     if (!gltf) return;
-    const isFirstModel = currentModelIndex < 0;
+    await exit;
     loadModel(gltf);
     currentModelIndex = index;
-    if (isFirstModel) playIntro();
+    if (isFirstModel) {
+      playIntro();
+    } else {
+      slideOffset = direction * slideExitDistance();
+      slideTo(0, SLIDE_IN_DURATION, easeOutCubic);
+    }
     updateModelPickerSelection();
     if (historyMode) {
       const url = new URL(window.location.href);
@@ -823,11 +864,11 @@ gyroscopeButton.addEventListener("click", () => {
 
 previousModelButton.addEventListener("click", () => {
   const index = (currentModelIndex - 1 + MODELS.length) % MODELS.length;
-  changeModel(index);
+  changeModel(index, "push", -1);
 });
 nextModelButton.addEventListener("click", () => {
   const index = (currentModelIndex + 1) % MODELS.length;
-  changeModel(index);
+  changeModel(index, "push", 1);
 });
 let diceTurns = 0;
 randomModelButton.addEventListener("click", () => {
@@ -912,6 +953,8 @@ function animate() {
   for (const entry of [...activeTweens]) entry.step(now);
   controls.update();
   updateCutPlane();
+  slideAxis.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  specimen.position.copy(slideAxis).multiplyScalar(slideOffset);
   // The dolly is applied for rendering only, so OrbitControls never sees it.
   camera.position.addScaledVector(cameraDirection, cameraDolly);
   camera.updateMatrixWorld();
