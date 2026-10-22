@@ -1,3 +1,6 @@
 .venv/
 .DS_Store
 /PUBLISHING.local.md
+node_modules/
+dist/
+.playwright-mcp/
