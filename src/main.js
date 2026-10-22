@@ -65,16 +65,17 @@ const isTouchDevice = navigator.maxTouchPoints > 0 ||
   window.matchMedia("(pointer: coarse)").matches;
 gyroscopeButton.hidden = !isTouchDevice || !("DeviceOrientationEvent" in window);
 
+// The page background shows through a transparent canvas, so the per-model
+// background colour is exact and unaffected by tone mapping in post-processing.
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#CCC8C6");
 
 const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
 camera.up.set(0, 1, 0);
 camera.layers.enable(1);
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
-  alpha: false,
+  antialias: false, // SMAA in the composer instead; MSAA is lost in render targets anyway
+  alpha: true,
   stencil: true
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -675,7 +676,6 @@ function changeModel(index, historyMode = "push") {
         loadModel(gltf);
         currentModelIndex = index;
         updateModelPickerSelection();
-        scene.background = new THREE.Color(MODELS[index].backgroundColor);
         document.body.style.backgroundColor = MODELS[index].backgroundColor;
         themeColorMeta.content = MODELS[index].backgroundColor;
         if (historyMode) {
