@@ -1,0 +1,117 @@
+// Live tuning of the cut-face stone, one folder per cut-face colour of the
+// current model. Loaded only with ?tweak in the URL. "Copy prompt" puts a
+// prompt on the clipboard that asks an LLM to write the current values into
+// stone-presets.js as that model's entry.
+import { Pane } from "tweakpane";
+
+const RANGES = {
+  roughness: { min: 0, max: 1 },
+  metalness: { min: 0, max: 1 },
+  chipDensity: { min: 0, max: 2 },
+  chipEmbed: { min: 0, max: 1 },
+  veinScale: { min: 0.02, max: 1 },
+  veinWidth: { min: 0, max: 0.3 },
+  veinStrength: { min: 0, max: 1 },
+  cloudStrength: { min: 0, max: 0.6 },
+  emissive: { min: 0, max: 1.5 }
+};
+const DECIMALS = 3;
+
+const round = (value) => Number(value.toFixed(DECIMALS));
+
+// The model's entry for STONE_PRESETS: per colour, only the values that differ
+// from what they would fall back to.
+function presetEntry(entries) {
+  const result = {};
+  for (const { hex, settings, base } of entries) {
+    const changes = {};
+    for (const key of Object.keys(RANGES)) {
+      if (round(settings[key]) !== round(base[key])) changes[key] = round(settings[key]);
+    }
+    if (Object.keys(changes).length) result[hex] = changes;
+  }
+  return result;
+}
+
+function buildPrompt(model, entries) {
+  const json = JSON.stringify(presetEntry(entries), null, 2);
+  return [
+    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness. Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
+    "",
+    "```json",
+    json,
+    "```"
+  ].join("\n");
+}
+
+export function createStoneTweaks(onChange) {
+  const container = document.createElement("div");
+  container.className = "tweak-pane";
+  document.body.append(container);
+  const pane = new Pane({ container, title: "Stone" });
+  let folders = [];
+  let actions = [];
+  // The pane only shows after the first model, so the toggle is never stale.
+  pane.hidden = true;
+
+  function flash(button, title) {
+    const original = button.title;
+    button.title = title;
+    setTimeout(() => { button.title = original; }, 1200);
+  }
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      console.warn("Clipboard write failed; the prompt follows.", error);
+      console.log(text);
+      return false;
+    }
+  }
+
+  // Back to what the colour would get without a preset entry.
+  function reset(entry) {
+    Object.assign(entry.settings, entry.base);
+    onChange(entry);
+  }
+
+  function show(model, entries) {
+    for (const item of [...folders, ...actions]) item.dispose();
+    folders = [];
+    actions = [];
+    pane.title = `Stone: ${model.name}`;
+    pane.hidden = false;
+
+    for (const entry of entries) {
+      const folder = pane.addFolder({ title: entry.hex, expanded: entries.length === 1 });
+      const swatch = document.createElement("i");
+      swatch.className = "tweak-swatch";
+      swatch.style.background = entry.hex;
+      folder.element.querySelector(".tp-fldv_b")?.prepend(swatch);
+      for (const [key, range] of Object.entries(RANGES)) {
+        folder.addBinding(entry.settings, key, { ...range, step: 0.001 })
+          .on("change", () => onChange(entry));
+      }
+      folder.addButton({ title: "Reset this colour" }).on("click", () => {
+        reset(entry);
+        folder.refresh();
+      });
+      folders.push(folder);
+    }
+
+    const copyButton = pane.addButton({ title: "Copy prompt" });
+    copyButton.on("click", async () => {
+      flash(copyButton, (await copy(buildPrompt(model, entries))) ? "Copied" : "Copy failed; see console");
+    });
+    const resetButton = pane.addButton({ title: "Reset all colours" });
+    resetButton.on("click", () => {
+      entries.forEach(reset);
+      pane.refresh();
+    });
+    actions.push(copyButton, resetButton);
+  }
+
+  return { show };
+}

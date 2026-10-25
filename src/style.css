@@ -280,3 +280,24 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
     letter-spacing: 0.04em;
   }
 }
+
+/* Stone tuning pane (?tweak), kept clear of the actions at the top right. */
+.tweak-pane {
+  position: fixed;
+  z-index: 2;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  width: 300px;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.tweak-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 8px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.25);
+}
