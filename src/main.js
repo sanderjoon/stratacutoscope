@@ -1,8 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
-import { ConvexHull } from "three/addons/math/ConvexHull.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
@@ -387,8 +385,7 @@ const capGeometry = new THREE.PlaneGeometry(1, 1);
 const cameraDirectionForFit = new THREE.Vector3();
 let previousPointerTime = 0;
 const modelLoader = new GLTFLoader();
-// Models are fetched, parsed and prepared once (see prepareModel) and kept,
-// so a switch only assembles meshes and never redoes that work.
+// Parsed models are kept, so a switch only assembles meshes.
 const modelRequests = new Map();
 
 function fetchModel(index) {
@@ -541,28 +538,6 @@ function fitCameraToModel() {
   fitCameraDistance = camera.position.distanceTo(controls.target);
   limitZoomToModel();
   updateDistanceFade();
-}
-
-function hullVertices(points, bounds) {
-  try {
-    const hull = new ConvexHull().setFromPoints(points);
-    const unique = new Set();
-    for (const face of hull.faces) {
-      let edge = face.edge;
-      do {
-        unique.add(edge.head().point);
-        edge = edge.next;
-      } while (edge !== face.edge);
-    }
-    return [...unique];
-  } catch {
-    // Degenerate input (e.g. flat or tiny); fall back to the bounding box corners.
-    return Array.from({ length: 8 }, (_, i) => new THREE.Vector3(
-      i & 1 ? bounds.max.x : bounds.min.x,
-      i & 2 ? bounds.max.y : bounds.min.y,
-      i & 4 ? bounds.max.z : bounds.min.z
-    ));
-  }
 }
 
 // Zooming moves the cut plane through the model, so limit the zoom range to
@@ -781,15 +756,6 @@ function createStencilGroup(geometry, renderOrder) {
   return group;
 }
 
-function createStencilGeometry(geometry) {
-  const positionGeometry = new THREE.BufferGeometry();
-  positionGeometry.setAttribute("position", geometry.getAttribute("position"));
-  positionGeometry.setIndex(geometry.getIndex());
-  const stencilGeometry = mergeVertices(positionGeometry);
-  positionGeometry.dispose();
-  return stencilGeometry;
-}
-
 // Caps of the current model with their stone settings, one settings object
 // per cut-face colour, so the tweak pane can drive them live.
 let capEntries = [];
@@ -864,77 +830,48 @@ function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
 const nextIdle = () => new Promise((resolve) =>
   "requestIdleCallback" in window ? requestIdleCallback(resolve) : setTimeout(resolve, 0));
 
-// Everything about a parsed GLB that does not depend on the scene: centred
-// geometry with the chosen colour layer, the stencil geometry, and the hull
-// used to frame it. One mesh per idle slice, so a model prepared in the
-// background does not stall the one on screen.
-async function prepareModel(gltf) {
-  const source = gltf.scene;
-  source.updateMatrixWorld(true);
-  const bounds = new THREE.Box3().setFromObject(source);
-  const center = bounds.getCenter(new THREE.Vector3());
-  const size = bounds.getSize(new THREE.Vector3());
-  const maxDimension = Math.max(size.x, size.y, size.z);
-  if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
-    throw new Error("The GLB does not contain measurable geometry.");
-  }
-  const meshes = [];
-  source.traverse((object) => {
-    if (object.isMesh) meshes.push(object);
-  });
-  if (!meshes.length) throw new Error("The GLB contains no mesh to display.");
-  bounds.min.sub(center);
-  bounds.max.sub(center);
-
+// The GLBs come prepared by scripts/prepare-models.mjs: centred, with one
+// colour layer, a welded stencil index under any mesh that needs one (a child
+// node flagged in its extras), and the framing numbers in the scene's extras.
+// Here they are only read back.
+function prepareModel(gltf) {
+  const metrics = gltf.scene.userData.stratacutoscope;
+  if (!metrics) throw new Error("The GLB has not been prepared; run `yarn prepare-models`.");
   const parts = [];
-  const hullInput = [];
-  for (const mesh of meshes) {
-    if (parts.length) await nextIdle();
-    const geometry = mesh.geometry.clone();
-    // glTF stores Blender color layers by channel index, not by their original names.
-    const attributeColor = geometry.getAttribute("Attribute") ||
-      geometry.getAttribute("attribute") ||
-      geometry.getAttribute("color_3") ||
-      geometry.getAttribute("color_2") ||
-      geometry.getAttribute("color_1") ||
-      geometry.getAttribute("color");
-    const vertexColor = attributeColor
-      ? new THREE.Color(attributeColor.getX(0), attributeColor.getY(0), attributeColor.getZ(0))
-      : new THREE.Color(1, 1, 1);
-    if (attributeColor) {
-      geometry.setAttribute("color", attributeColor);
-    } else {
-      geometry.deleteAttribute("color");
+  gltf.scene.traverse((object) => {
+    if (!object.isMesh) return;
+    if (object.userData.stratacutoscope === "stencil") {
+      const part = parts.find((candidate) => candidate.mesh === object.parent);
+      if (part) part.stencilGeometry = object.geometry;
+      return;
     }
-    geometry.deleteAttribute("color_1");
-    geometry.deleteAttribute("color_2");
-    geometry.deleteAttribute("color_3");
-    geometry.deleteAttribute("Attribute");
-    geometry.deleteAttribute("attribute");
-    const centeredTransform = new THREE.Matrix4()
-      .makeTranslation(-center.x, -center.y, -center.z)
-      .multiply(mesh.matrixWorld);
-    geometry.applyMatrix4(centeredTransform);
-    const position = geometry.getAttribute("position");
-    const stride = Math.max(1, Math.ceil(position.count / 50000));
-    for (let i = 0; i < position.count; i += stride) {
-      hullInput.push(new THREE.Vector3().fromBufferAttribute(position, i));
-    }
+    const attributeColor = object.geometry.getAttribute("color");
     parts.push({
-      geometry,
-      stencilGeometry: createStencilGeometry(geometry),
-      material: mesh.material,
+      mesh: object,
+      geometry: object.geometry,
+      // A mesh without duplicated vertices is its own closed surface.
+      stencilGeometry: object.geometry,
+      material: object.material,
       hasVertexColors: Boolean(attributeColor),
-      vertexColor
+      vertexColor: attributeColor
+        ? new THREE.Color(attributeColor.getX(0), attributeColor.getY(0), attributeColor.getZ(0))
+        : new THREE.Color(1, 1, 1)
     });
+  });
+  if (!parts.length) throw new Error("The GLB contains no mesh to display.");
+  const extremePoints = [];
+  for (let i = 0; i < metrics.extremePoints.length; i += 3) {
+    extremePoints.push(new THREE.Vector3().fromArray(metrics.extremePoints, i));
   }
-  const extremePoints = hullVertices(hullInput, bounds);
   return {
-    bounds,
-    maxDimension,
+    bounds: new THREE.Box3(
+      new THREE.Vector3().fromArray(metrics.bounds.min),
+      new THREE.Vector3().fromArray(metrics.bounds.max)
+    ),
+    maxDimension: metrics.maxDimension,
     parts,
     extremePoints,
-    radius: Math.max(...extremePoints.map((point) => point.length()))
+    radius: metrics.radius
   };
 }
 
