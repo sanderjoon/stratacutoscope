@@ -332,7 +332,6 @@ controls.target.set(0, 0, 0);
 
 let fitDistance = 4;
 let fitCameraDistance = 0;
-let previousTwoFingerCenter = null;
 const activePointers = new Map();
 // Current spin, in the units applyDragRotation() takes (x: yaw, y: pitch).
 // A drag sets it directly; otherwise it relaxes toward the motor speed.
@@ -367,9 +366,6 @@ let gyroscopeEnabled = false;
 let lastFrameTime = 0;
 const viewDirection = new THREE.Vector3(1, 0, 0);
 const cameraDirection = new THREE.Vector3();
-const panOffset = new THREE.Vector3();
-const panRight = new THREE.Vector3();
-const panUp = new THREE.Vector3();
 const cutPoint = new THREE.Vector3();
 const cutPlane = new THREE.Plane();
 const planeNormal = new THREE.Vector3(0, 0, 1);
@@ -736,42 +732,6 @@ const finishPointer = (event) => {
 };
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
-
-canvas.addEventListener("touchstart", (event) => {
-  previousTwoFingerCenter = event.touches.length === 2
-    ? {
-        x: (event.touches[0].clientX + event.touches[1].clientX) * 0.5,
-        y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
-      }
-    : null;
-}, { passive: true });
-
-canvas.addEventListener("touchmove", (event) => {
-  if (event.touches.length === 2) {
-    const center = {
-      x: (event.touches[0].clientX + event.touches[1].clientX) * 0.5,
-      y: (event.touches[0].clientY + event.touches[1].clientY) * 0.5
-    };
-    if (previousTwoFingerCenter && canvas.clientHeight > 0) {
-      const unitsPerPixel = 2 * camera.position.distanceTo(controls.target) *
-        Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) / canvas.clientHeight;
-      panRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
-      panUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-      panOffset.copy(panRight).multiplyScalar(
-        -(center.x - previousTwoFingerCenter.x) * unitsPerPixel
-      ).addScaledVector(panUp, (center.y - previousTwoFingerCenter.y) * unitsPerPixel);
-      camera.position.add(panOffset);
-      controls.target.add(panOffset);
-    }
-    previousTwoFingerCenter = center;
-  } else {
-    previousTwoFingerCenter = null;
-  }
-}, { passive: true });
-
-canvas.addEventListener("touchend", (event) => {
-  if (event.touches.length !== 2) previousTwoFingerCenter = null;
-}, { passive: true });
 
 const capGroup = new THREE.Group();
 scene.add(capGroup);
