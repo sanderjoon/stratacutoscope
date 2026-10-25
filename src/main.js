@@ -10,6 +10,7 @@ import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
+import { stoneSettings } from "./stone-presets.js";
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
@@ -46,12 +47,7 @@ const CHIP_RADIUS = [0.05, 0.28]; // of the cell size, skewed toward small
 const CHIP_ARC_STRETCH = 3;
 const CHIP_ARC_REFERENCE = 0.5; // of the model's radius
 const CHIP_COLORS = ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"];
-const CHIP_EMBED = 0.5; // how far a chip's tone can sink toward the resin colour
-const VEIN_SCALE = 0.22; // in base cells; smaller is a wider, lazier vein pattern
-const VEIN_WIDTH = 0.07; // bold veins; the finer second set is half as wide and strong
-const VEIN_STRENGTH = 0.7;
-const CLOUD_STRENGTH = 0.14; // mottling of the resin's brightness
-const CAP_EMISSIVE_INTENSITY = 0.65;
+// The rest of the stone's look is set per model and cut-face colour in stone-presets.js.
 const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
 const gyroscopeButton = document.querySelector("#gyroscope");
@@ -167,6 +163,7 @@ function fadeWithDistance(material) {
 
 // Cut-face stone. Chips are random polyhedra, one per cell of a 3D grid in
 // model space, over a resin whose brightness is mottled and cut by thin veins.
+// The grid is shared; the look of the stone is a uniform set per cap.
 const chipUniforms = {
   capToModel: { value: new THREE.Matrix4() },
   chipCell: { value: 1 },
@@ -182,10 +179,20 @@ const chipLayersGlsl = [...CHIP_LAYERS].reverse().map((layer, index) => `
           turn, ${layer.density.toFixed(3)}, resin, pixel * ${layer.scale.toFixed(3)});
         stone = mix(stone, chip.rgb, chip.a);`).join("");
 function speckleCap(material) {
+  const stoneUniforms = {
+    chipDensity: { value: 1 },
+    chipEmbed: { value: 0 },
+    veinScale: { value: 1 },
+    veinWidth: { value: 0 },
+    veinStrength: { value: 0 },
+    cloudStrength: { value: 0 },
+    capEmissive: { value: 0 }
+  };
+  material.userData.stoneUniforms = stoneUniforms;
   const fade = material.onBeforeCompile;
   material.onBeforeCompile = (shader) => {
     fade(shader);
-    Object.assign(shader.uniforms, chipUniforms);
+    Object.assign(shader.uniforms, chipUniforms, stoneUniforms);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vCapWorld;")
       .replace(
@@ -199,6 +206,13 @@ function speckleCap(material) {
         uniform float chipCell;
         uniform float chipTurn;
         uniform vec3 chipColors[${CHIP_COLORS.length}];
+        uniform float chipDensity;
+        uniform float chipEmbed;
+        uniform float veinScale;
+        uniform float veinWidth;
+        uniform float veinStrength;
+        uniform float cloudStrength;
+        uniform float capEmissive;
         vec3 hash3(vec3 p) {
           p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
                    dot(p, vec3(269.5, 183.3, 246.1)),
@@ -242,7 +256,7 @@ function speckleCap(material) {
             vec3 neighbour = cell + vec3(x, y, z);
             vec3 key = vec3(neighbour.x, mod(neighbour.y, turn), neighbour.z);
             vec3 seed = hash3(key);
-            if (seed.x > density) continue;
+            if (seed.x > density * chipDensity) continue;
             vec3 shape = hash3(key + 17.3);
             vec3 spin = hash3(key + 41.9);
             vec3 tone = hash3(key + 73.1);
@@ -268,7 +282,7 @@ function speckleCap(material) {
             float coverage = 1.0 - smoothstep(1.0 - width, 1.0 + width, distance);
             if (coverage > result.a) {
               vec3 colour = chipColors[int(seed.z * ${CHIP_COLORS.length}.0)] * (0.8 + tone.z * 0.4);
-              colour = mix(colour, resin, tone.x * ${CHIP_EMBED.toFixed(3)});
+              colour = mix(colour, resin, tone.x * chipEmbed);
               result = vec4(colour, coverage);
             }
           }
@@ -278,15 +292,15 @@ function speckleCap(material) {
         vec3 stonePoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
         float pixel = length(fwidth(stonePoint)) * 0.7;
         // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
-        vec3 resin = diffuseColor.rgb * (1.0 + ${CLOUD_STRENGTH.toFixed(3)} * fbm(stonePoint * ${(VEIN_SCALE * 0.5).toFixed(4)} + 5.3));
+        vec3 resin = diffuseColor.rgb * (1.0 + cloudStrength * fbm(stonePoint * veinScale * 0.5 + 5.3));
         // Veins are the zero crossings of a noise field, warped by another so
         // they wander and branch like marble. A finer set lies underneath.
-        vec3 veinPoint = stonePoint * ${VEIN_SCALE.toFixed(4)};
+        vec3 veinPoint = stonePoint * veinScale;
         veinPoint += 0.9 * vec3(fbm(veinPoint + 3.1), fbm(veinPoint + 9.7), fbm(veinPoint + 15.9));
-        float vein = 1.0 - smoothstep(0.0, ${VEIN_WIDTH.toFixed(3)}, abs(fbm(veinPoint)));
-        float fineVein = 1.0 - smoothstep(0.0, ${(VEIN_WIDTH / 2).toFixed(3)}, abs(fbm(veinPoint * 2.1 + 27.3)));
+        float vein = 1.0 - smoothstep(0.0, veinWidth, abs(fbm(veinPoint)));
+        float fineVein = 1.0 - smoothstep(0.0, veinWidth * 0.5, abs(fbm(veinPoint * 2.1 + 27.3)));
         vec3 veinColour = mix(diffuseColor.rgb * 0.45, chipColors[0], 0.4);
-        resin = mix(resin, veinColour, max(vein, fineVein * 0.5) * ${VEIN_STRENGTH.toFixed(3)});
+        resin = mix(resin, veinColour, max(vein, fineVein * 0.5) * veinStrength);
         float stoneRadius = length(stonePoint.xz);
         float stoneTurns = atan(stonePoint.z, stonePoint.x) / 6.2831853 + 0.5;
         vec3 stone = resin;
@@ -294,7 +308,7 @@ function speckleCap(material) {
         float turn;${chipLayersGlsl}
         diffuseColor.rgb = stone;`)
       .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
-        totalEmissiveRadiance = stone * ${CAP_EMISSIVE_INTENSITY};`);
+        totalEmissiveRadiance = stone * capEmissive;`);
   };
   material.customProgramCacheKey = () => "speckled-cap";
   return material;
@@ -777,15 +791,42 @@ function createStencilGeometry(geometry) {
   return stencilGeometry;
 }
 
-function createCap(meshMaterial, renderOrder, vertexColor) {
+// Caps of the current model with their stone settings, one settings object
+// per cut-face colour, so the tweak pane can drive them live.
+let capEntries = [];
+
+function applyStoneSettings(material, settings) {
+  material.roughness = settings.roughness;
+  material.metalness = settings.metalness;
+  const uniforms = material.userData.stoneUniforms;
+  uniforms.chipDensity.value = settings.chipDensity;
+  uniforms.chipEmbed.value = settings.chipEmbed;
+  uniforms.veinScale.value = settings.veinScale;
+  uniforms.veinWidth.value = settings.veinWidth;
+  uniforms.veinStrength.value = settings.veinStrength;
+  uniforms.cloudStrength.value = settings.cloudStrength;
+  uniforms.capEmissive.value = settings.emissive;
+}
+
+function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
   const capMaterial = speckleCap(fadeWithDistance(meshMaterial.clone()));
   capMaterial.clippingPlanes = [];
   capMaterial.vertexColors = false;
   capMaterial.color.multiply(vertexColor);
-  if (capMaterial.emissive) {
-    capMaterial.emissive.copy(capMaterial.color);
-    capMaterial.emissiveIntensity = CAP_EMISSIVE_INTENSITY;
+  const hex = `#${vertexColor.getHexString()}`;
+  let entry = capEntries.find((candidate) => candidate.hex === hex);
+  if (!entry) {
+    entry = {
+      hex,
+      materials: [],
+      settings: stoneSettings(modelId, hex, meshMaterial),
+      // What the settings fall back to, so the tweak pane can list only the changes.
+      base: stoneSettings(null, hex, meshMaterial)
+    };
+    capEntries.push(entry);
   }
+  entry.materials.push(capMaterial);
+  applyStoneSettings(capMaterial, entry.settings);
   capMaterial.stencilWrite = true;
   capMaterial.stencilRef = 0;
   capMaterial.stencilFunc = THREE.NotEqualStencilFunc;
@@ -803,7 +844,7 @@ function createCap(meshMaterial, renderOrder, vertexColor) {
   capGroup.add(cap);
 }
 
-function loadModel(gltf) {
+function loadModel(gltf, modelId) {
   const source = gltf.scene;
   source.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(source);
@@ -826,6 +867,7 @@ function loadModel(gltf) {
 
   disposeGroupContents(modelOrientation, true);
   disposeGroupContents(capGroup, false);
+  capEntries = [];
   specimenPitch = 0;
   specimenYaw = 0;
   updateSpecimenRotation();
@@ -879,7 +921,7 @@ function loadModel(gltf) {
     const visibleMesh = new THREE.Mesh(geometry, material);
     visibleMesh.renderOrder = index * 3 + 3;
     modelOrientation.add(visibleMesh);
-    createCap(materialList[0], index * 3 + 2, vertexColor);
+    createCap(materialList[0], index * 3 + 2, vertexColor, modelId);
   }
 
   modelExtremePoints = hullVertices(hullInput);
@@ -965,7 +1007,7 @@ async function changeModel(index, historyMode = "push", direction = 0) {
   try {
     if (!gltf) return;
     await exit;
-    loadModel(gltf);
+    loadModel(gltf, MODELS[index].id);
     currentModelIndex = index;
     if (isFirstModel) {
       playIntro();

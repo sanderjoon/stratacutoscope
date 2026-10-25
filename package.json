@@ -11,7 +11,8 @@
   "dependencies": {
     "n8ao": "^2.0.1",
     "postprocessing": "^6.39.5",
-    "three": "0.170.0"
+    "three": "0.170.0",
+    "tweakpane": "^4.0.5"
   },
   "devDependencies": {
     "vite": "^6.3.5"
