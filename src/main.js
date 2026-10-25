@@ -794,16 +794,24 @@ function createStencilGeometry(geometry) {
 // Caps of the current model with their stone settings, one settings object
 // per cut-face colour, so the tweak pane can drive them live.
 let capEntries = [];
-// Stone tuning pane, loaded on demand with ?tweak in the URL.
+// Stone tuning pane. ?tweak in the URL shows a toggle for it; the pane's
+// module is only loaded the first time the toggle is pressed.
 let stoneTweaks = null;
-if (new URLSearchParams(window.location.search).has("tweak")) {
-  import("./tweak.js").then(({ createStoneTweaks }) => {
+let stoneTweaksOpen = false;
+const tweakToggleButton = document.querySelector("#tweak-toggle");
+tweakToggleButton.hidden = !new URLSearchParams(window.location.search).has("tweak");
+tweakToggleButton.addEventListener("click", async () => {
+  stoneTweaksOpen = !stoneTweaksOpen;
+  tweakToggleButton.setAttribute("aria-pressed", String(stoneTweaksOpen));
+  if (!stoneTweaks) {
+    const { createStoneTweaks } = await import("./tweak.js");
     stoneTweaks = createStoneTweaks((entry) => {
       for (const material of entry.materials) applyStoneSettings(material, entry.settings);
     });
     if (currentModelIndex >= 0) stoneTweaks.show(MODELS[currentModelIndex], capEntries);
-  });
-}
+  }
+  stoneTweaks.setVisible(stoneTweaksOpen);
+});
 
 function applyStoneSettings(material, settings) {
   material.roughness = settings.roughness;

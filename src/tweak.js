@@ -51,7 +51,7 @@ export function createStoneTweaks(onChange) {
   const pane = new Pane({ container, title: "Stone" });
   let folders = [];
   let actions = [];
-  // The pane only shows after the first model, so the toggle is never stale.
+  // Hidden until the page's toggle opens it; show() only fills it.
   pane.hidden = true;
 
   function flash(button, title) {
@@ -82,7 +82,6 @@ export function createStoneTweaks(onChange) {
     folders = [];
     actions = [];
     pane.title = `Stone: ${model.name}`;
-    pane.hidden = false;
 
     for (const entry of entries) {
       const folder = pane.addFolder({ title: entry.hex, expanded: entries.length === 1 });
@@ -113,5 +112,9 @@ export function createStoneTweaks(onChange) {
     actions.push(copyButton, resetButton);
   }
 
-  return { show };
+  function setVisible(visible) {
+    pane.hidden = !visible;
+  }
+
+  return { show, setVisible };
 }
