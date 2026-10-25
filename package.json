@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare-models": "node scripts/prepare-models.mjs"
   },
   "dependencies": {
     "n8ao": "^2.0.1",
@@ -15,6 +16,8 @@
     "tweakpane": "^4.0.5"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "vite": "^6.3.5"
   }
 }
