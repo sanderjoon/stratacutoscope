@@ -387,12 +387,13 @@ const capGeometry = new THREE.PlaneGeometry(1, 1);
 const cameraDirectionForFit = new THREE.Vector3();
 let previousPointerTime = 0;
 const modelLoader = new GLTFLoader();
-// Parsed GLBs are kept so switching back to a model needs no network or parse work.
+// Models are fetched, parsed and prepared once (see prepareModel) and kept,
+// so a switch only assembles meshes and never redoes that work.
 const modelRequests = new Map();
 
 function fetchModel(index) {
   if (!modelRequests.has(index)) {
-    const request = modelLoader.loadAsync(MODELS[index].url);
+    const request = modelLoader.loadAsync(MODELS[index].url).then(prepareModel);
     request.then(() => { request.ready = true; });
     modelRequests.set(index, request);
   }
@@ -468,12 +469,11 @@ function updateModelPickerSelection() {
   });
 }
 
-function disposeGroupContents(group, disposeGeometry) {
-  const geometries = new Set();
+// Geometry is left alone: it belongs to the prepared model, kept for the next visit.
+function disposeGroupContents(group) {
   const materials = new Set();
   const textures = new Set();
   group.traverse((object) => {
-    if (object.geometry && disposeGeometry) geometries.add(object.geometry);
     if (object.material) {
       for (const material of Array.isArray(object.material)
         ? object.material
@@ -486,7 +486,6 @@ function disposeGroupContents(group, disposeGeometry) {
     }
   });
   for (const child of [...group.children]) group.remove(child);
-  for (const geometry of geometries) geometry.dispose();
   for (const material of materials) material.dispose();
   for (const texture of textures) texture.dispose();
 }
@@ -544,7 +543,7 @@ function fitCameraToModel() {
   updateDistanceFade();
 }
 
-function hullVertices(points) {
+function hullVertices(points, bounds) {
   try {
     const hull = new ConvexHull().setFromPoints(points);
     const unique = new Set();
@@ -559,9 +558,9 @@ function hullVertices(points) {
   } catch {
     // Degenerate input (e.g. flat or tiny); fall back to the bounding box corners.
     return Array.from({ length: 8 }, (_, i) => new THREE.Vector3(
-      i & 1 ? modelBounds.max.x : modelBounds.min.x,
-      i & 2 ? modelBounds.max.y : modelBounds.min.y,
-      i & 4 ? modelBounds.max.z : modelBounds.min.z
+      i & 1 ? bounds.max.x : bounds.min.x,
+      i & 2 ? bounds.max.y : bounds.min.y,
+      i & 4 ? bounds.max.z : bounds.min.z
     ));
   }
 }
@@ -862,39 +861,35 @@ function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
   capGroup.add(cap);
 }
 
-function loadModel(gltf, modelId) {
+const nextIdle = () => new Promise((resolve) =>
+  "requestIdleCallback" in window ? requestIdleCallback(resolve) : setTimeout(resolve, 0));
+
+// Everything about a parsed GLB that does not depend on the scene: centred
+// geometry with the chosen colour layer, the stencil geometry, and the hull
+// used to frame it. One mesh per idle slice, so a model prepared in the
+// background does not stall the one on screen.
+async function prepareModel(gltf) {
   const source = gltf.scene;
   source.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(source);
   const center = bounds.getCenter(new THREE.Vector3());
-  modelBounds.copy(bounds);
-  modelBounds.min.sub(center);
-  modelBounds.max.sub(center);
   const size = bounds.getSize(new THREE.Vector3());
   const maxDimension = Math.max(size.x, size.y, size.z);
   if (!Number.isFinite(maxDimension) || maxDimension <= 0) {
     throw new Error("The GLB does not contain measurable geometry.");
   }
-
-  fitDistance = maxDimension;
   const meshes = [];
   source.traverse((object) => {
     if (object.isMesh) meshes.push(object);
   });
   if (!meshes.length) throw new Error("The GLB contains no mesh to display.");
+  bounds.min.sub(center);
+  bounds.max.sub(center);
 
-  disposeGroupContents(modelOrientation, true);
-  disposeGroupContents(capGroup, false);
-  capEntries = [];
-  specimenPitch = 0;
-  specimenYaw = 0;
-  updateSpecimenRotation();
-  modelOrientation.quaternion.identity();
-  controls.target.set(0, 0, 0);
-  camera.position.copy(viewDirection);
+  const parts = [];
   const hullInput = [];
-
-  for (const [index, mesh] of meshes.entries()) {
+  for (const mesh of meshes) {
+    if (parts.length) await nextIdle();
     const geometry = mesh.geometry.clone();
     // glTF stores Blender color layers by channel index, not by their original names.
     const attributeColor = geometry.getAttribute("Attribute") ||
@@ -925,25 +920,58 @@ function loadModel(gltf, modelId) {
     for (let i = 0; i < position.count; i += stride) {
       hullInput.push(new THREE.Vector3().fromBufferAttribute(position, i));
     }
-    const stencilGeometry = createStencilGeometry(geometry);
-    const material = Array.isArray(mesh.material)
-      ? mesh.material.map((item) => item.clone())
-      : mesh.material.clone();
+    parts.push({
+      geometry,
+      stencilGeometry: createStencilGeometry(geometry),
+      material: mesh.material,
+      hasVertexColors: Boolean(attributeColor),
+      vertexColor
+    });
+  }
+  const extremePoints = hullVertices(hullInput, bounds);
+  return {
+    bounds,
+    maxDimension,
+    parts,
+    extremePoints,
+    radius: Math.max(...extremePoints.map((point) => point.length()))
+  };
+}
+
+function loadModel(model, modelId) {
+  modelBounds.copy(model.bounds);
+  const maxDimension = model.maxDimension;
+  fitDistance = maxDimension;
+
+  disposeGroupContents(modelOrientation);
+  disposeGroupContents(capGroup);
+  capEntries = [];
+  specimenPitch = 0;
+  specimenYaw = 0;
+  updateSpecimenRotation();
+  modelOrientation.quaternion.identity();
+  controls.target.set(0, 0, 0);
+  camera.position.copy(viewDirection);
+
+  for (const [index, part] of model.parts.entries()) {
+    const material = Array.isArray(part.material)
+      ? part.material.map((item) => item.clone())
+      : part.material.clone();
     const materialList = Array.isArray(material) ? material : [material];
     for (const item of materialList) {
-      item.vertexColors = Boolean(attributeColor);
+      item.vertexColors = part.hasVertexColors;
       item.clippingPlanes = [cutPlane];
       fadeWithDistance(item);
     }
-    modelOrientation.add(createStencilGroup(stencilGeometry, index * 3 + 1));
-    const visibleMesh = new THREE.Mesh(geometry, material);
+    modelOrientation.add(createStencilGroup(part.stencilGeometry, index * 3 + 1));
+    const visibleMesh = new THREE.Mesh(part.geometry, material);
     visibleMesh.renderOrder = index * 3 + 3;
     modelOrientation.add(visibleMesh);
-    createCap(materialList[0], index * 3 + 2, vertexColor, modelId);
+    createCap(materialList[0], index * 3 + 2, part.vertexColor, modelId);
   }
 
-  modelExtremePoints = hullVertices(hullInput);
-  modelRadius = Math.max(...modelExtremePoints.map((point) => point.length()));
+  modelExtremePoints = model.extremePoints;
+  modelRadius = model.radius;
   aoPass.configuration.aoRadius = maxDimension * AO_RADIUS_RATIO;
   chipUniforms.chipCell.value = maxDimension * CHIP_CELL_RATIO;
   chipUniforms.chipTurn.value = Math.max(4, Math.round(
@@ -1012,9 +1040,9 @@ async function changeModel(index, historyMode = "push", direction = 0) {
   if (!request.ready) setLoading(true);
   // Name and colour the page straight away so the switch feels immediate even while the GLB downloads.
   showModelIdentity(index);
-  let gltf;
+  let model;
   try {
-    gltf = await request;
+    model = await request;
   } catch (error) {
     modelRequests.delete(index);
     if (currentModelIndex >= 0) showModelIdentity(currentModelIndex);
@@ -1023,9 +1051,9 @@ async function changeModel(index, historyMode = "push", direction = 0) {
     setStatus(`Could not load ${MODELS[index].name}: ${error.message || "check that the GLB is beside index.html."}`, true);
   }
   try {
-    if (!gltf) return;
+    if (!model) return;
     await exit;
-    loadModel(gltf, MODELS[index].id);
+    loadModel(model, MODELS[index].id);
     currentModelIndex = index;
     stoneTweaks?.show(MODELS[index], capEntries);
     if (isFirstModel) {
@@ -1146,8 +1174,7 @@ async function prefetchRemainingModels() {
   }
   for (const index of new Set(order)) {
     if (modelRequests.has(index)) continue;
-    await new Promise((resolve) =>
-      "requestIdleCallback" in window ? requestIdleCallback(resolve) : setTimeout(resolve, 200));
+    await nextIdle();
     try {
       await fetchModel(index);
     } catch {
