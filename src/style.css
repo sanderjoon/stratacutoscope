@@ -398,6 +398,19 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   }
 }
 
+/* Frame timing readout (?stats). */
+.stats {
+  position: absolute;
+  z-index: 2;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  margin: 0;
+  font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--ink);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 /* Stone tuning pane (?tweak), kept clear of the actions at the top right. */
 .tweak-pane {
   position: fixed;

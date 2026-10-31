@@ -92,12 +92,14 @@ const canvas = document.querySelector("#scene");
 const isTouchDevice = navigator.maxTouchPoints > 0 ||
   window.matchMedia("(pointer: coarse)").matches;
 // Switches for timing what costs what on a slow device, each a query key:
+//   ?stats     frame time readout, bottom left
 //   ?plaincap  flat cut faces, without the stone shader
 //   ?noao      no ambient occlusion pass
 //   ?noaa      no anti-aliasing pass
 //   ?dpr=1     render at this pixel ratio instead of the screen's
 const query = new URLSearchParams(window.location.search);
 const DIAGNOSTICS = {
+  stats: query.has("stats"),
   plainCap: query.has("plaincap"),
   noAO: query.has("noao"),
   noAA: query.has("noaa"),
@@ -1612,10 +1614,47 @@ changeModel(modelIndexFromUrl(), "replace").then(() => {
   return prefetchRemainingModels();
 });
 
+// Frame timing readout (?stats): the interval between frames, which a slow
+// GPU stretches, and the time the frame's own code takes, refreshed twice a second.
+const stats = DIAGNOSTICS.stats ? createStats() : null;
+function createStats() {
+  const element = document.createElement("pre");
+  element.className = "stats";
+  viewer.append(element);
+  const frames = [];
+  const scripts = [];
+  let shownAt = performance.now();
+  const flags = Object.entries(DIAGNOSTICS)
+    .filter(([, value]) => value)
+    .map(([key, value]) => (value === true ? key : `${key}=${value}`))
+    .join(" ") || "none";
+  return {
+    add(frame, script) {
+      frames.push(frame);
+      scripts.push(script);
+      const now = performance.now();
+      if (now - shownAt < 500) return;
+      shownAt = now;
+      const mean = (list) => list.reduce((sum, value) => sum + value, 0) / list.length;
+      const worst = Math.max(...frames);
+      element.textContent = [
+        `${(1000 / mean(frames)).toFixed(0)} fps`,
+        `frame ${mean(frames).toFixed(1)} ms, worst ${worst.toFixed(1)}`,
+        `script ${mean(scripts).toFixed(1)} ms`,
+        `${canvas.width}×${canvas.height} @${renderer.getPixelRatio()}`,
+        `flags: ${flags}`
+      ].join("\n");
+      frames.length = 0;
+      scripts.length = 0;
+    }
+  };
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now();
-  const delta = lastFrameTime ? Math.min((now - lastFrameTime) / 1000, 0.05) : 0;
+  const frameInterval = lastFrameTime ? now - lastFrameTime : 0;
+  const delta = Math.min(frameInterval / 1000, 0.05);
   lastFrameTime = now;
   // The model behaves like a turntable. While nobody holds it, the spin relaxes
   // exponentially toward the motor speed (zero when paused), so a flick eases
@@ -1639,6 +1678,7 @@ function animate() {
   specimen.scale.setScalar(galleryScale);
   for (const item of galleryItems.values()) item.spinner.quaternion.copy(specimen.quaternion);
   composer.render();
+  stats?.add(frameInterval, performance.now() - now);
 }
 resize();
 animate();
