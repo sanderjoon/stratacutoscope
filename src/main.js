@@ -368,12 +368,15 @@ function speckleCap(material) {
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
         vec3 stone = diffuseColor.rgb;
+        vec3 stonePoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
+        // The footprint comes from derivatives, which are only defined outside
+        // the branch below: taken inside, pixels along the cap's edge got
+        // garbage widths and a pale fringe.
+        float pixel = length(fwidth(stonePoint)) * 0.7;
         // The stencil test runs after this shader, not before it, so without
         // this branch every part's quad would pay for the stone over its whole
         // area. The mask pass has already settled which cap owns the pixel.
         if (abs(texture2D(capMask, gl_FragCoord.xy / maskSize).r * 255.0 - capId) < 0.5) {
-        vec3 stonePoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
-        float pixel = length(fwidth(stonePoint)) * 0.7;
         // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
         vec3 resin = diffuseColor.rgb;
         if (cloudStrength > 0.0) resin *= 1.0 + cloudStrength * fbm(stonePoint * veinScale * 0.5 + 5.3, 1e5, 3);
