@@ -5,7 +5,8 @@
 // Open the page with ?tweak to tune these live; the pane copies a prompt with
 // a replacement entry for the current model.
 export const STONE_DEFAULTS = {
-  chipColors: ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"], // the chips' tones, picked at random per chip; the first also tints the veins
+  chipColors: ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"], // the chips' tones, picked at random per chip
+  veinColor: "#141414", // what the veins are tinted toward
   chipDensity: 1, // multiplier on every chip layer's density
   chipEmbed: 0.5, // how far a chip's tone can sink toward the resin colour
   veinScale: 0.22, // in base cells; smaller is a wider, lazier vein pattern

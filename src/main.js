@@ -192,6 +192,7 @@ const chipLayersGlsl = [...CHIP_LAYERS].reverse().map((layer, index) => `
 function speckleCap(material) {
   const stoneUniforms = {
     chipColors: { value: Array.from({ length: CHIP_COLOR_COUNT }, () => new THREE.Color()) },
+    veinColor: { value: new THREE.Color() },
     chipDensity: { value: 1 },
     chipEmbed: { value: 0 },
     veinScale: { value: 1 },
@@ -218,6 +219,7 @@ function speckleCap(material) {
         uniform float chipCell;
         uniform float chipTurn;
         uniform vec3 chipColors[${CHIP_COLOR_COUNT}];
+        uniform vec3 veinColor;
         uniform float chipDensity;
         uniform float chipEmbed;
         uniform float veinScale;
@@ -311,7 +313,7 @@ function speckleCap(material) {
         veinPoint += 0.9 * vec3(fbm(veinPoint + 3.1), fbm(veinPoint + 9.7), fbm(veinPoint + 15.9));
         float vein = 1.0 - smoothstep(0.0, veinWidth, abs(fbm(veinPoint)));
         float fineVein = 1.0 - smoothstep(0.0, veinWidth * 0.5, abs(fbm(veinPoint * 2.1 + 27.3)));
-        vec3 veinColour = mix(diffuseColor.rgb * 0.45, chipColors[0], 0.4);
+        vec3 veinColour = mix(diffuseColor.rgb * 0.45, veinColor, 0.4);
         resin = mix(resin, veinColour, max(vein, fineVein * 0.5) * veinStrength);
         float stoneRadius = length(stonePoint.xz);
         float stoneTurns = atan(stonePoint.z, stonePoint.x) / 6.2831853 + 0.5;
@@ -836,6 +838,7 @@ function applyStoneSettings(material, settings) {
   material.metalness = settings.metalness;
   const uniforms = material.userData.stoneUniforms;
   settings.chipColors.forEach((hex, index) => uniforms.chipColors.value[index].set(hex));
+  uniforms.veinColor.value.set(settings.veinColor);
   uniforms.chipDensity.value = settings.chipDensity;
   uniforms.chipEmbed.value = settings.chipEmbed;
   uniforms.veinScale.value = settings.veinScale;

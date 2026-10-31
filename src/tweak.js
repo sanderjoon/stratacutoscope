@@ -26,6 +26,7 @@ function presetEntry(entries) {
   for (const { hex, settings, base } of entries) {
     const changes = {};
     if (settings.chipColors.join() !== base.chipColors.join()) changes.chipColors = [...settings.chipColors];
+    if (settings.veinColor !== base.veinColor) changes.veinColor = settings.veinColor;
     for (const key of Object.keys(RANGES)) {
       if (round(settings[key]) !== round(base[key])) changes[key] = round(settings[key]);
     }
@@ -37,7 +38,7 @@ function presetEntry(entries) {
 function buildPrompt(model, entries) {
   const json = JSON.stringify(presetEntry(entries), null, 2);
   return [
-    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness (chipColors lists the chips' four tones as sRGB hex). Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
+    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness (chipColors lists the chips' four tones and veinColor the veins' tint, as sRGB hex). Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
     "",
     "```json",
     json,
@@ -101,6 +102,8 @@ export function createStoneTweaks(onChange) {
           onChange(entry);
         });
       });
+      folder.addBinding(entry.settings, "veinColor", { view: "color", label: "vein" })
+        .on("change", () => onChange(entry));
       for (const [key, range] of Object.entries(RANGES)) {
         folder.addBinding(entry.settings, key, { ...range, step: 0.001 })
           .on("change", () => onChange(entry));
