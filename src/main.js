@@ -128,6 +128,19 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(DIAGNOSTICS.pixelRatio ??
   Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+// The cap mask: a cheap pass that runs the stencil logic first and records
+// which part's cap owns each pixel, so the stone shader can skip the rest.
+// Its objects live on their own layer in the one scene.
+const MASK_LAYER = 2;
+const capMask = new THREE.WebGLRenderTarget(1, 1, {
+  format: THREE.RedFormat,
+  type: THREE.UnsignedByteType,
+  minFilter: THREE.NearestFilter,
+  magFilter: THREE.NearestFilter,
+  generateMipmaps: false,
+  depthBuffer: true,
+  stencilBuffer: true
+});
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.localClippingEnabled = true;
@@ -199,7 +212,9 @@ function fadeWithDistance(material, opacity = modelOpacity) {
 const chipUniforms = {
   capToModel: { value: new THREE.Matrix4() },
   chipCell: { value: 1 },
-  chipTurn: { value: 16 } // angular cells in a full turn at the base scale
+  chipTurn: { value: 16 }, // angular cells in a full turn at the base scale
+  capMask: { value: capMask.texture },
+  maskSize: { value: new THREE.Vector2(1, 1) }
 };
 // Fine chips first so the coarse ones land on top. Each layer's angular cell
 // count is rounded so the grid still wraps cleanly around the axis.
@@ -225,7 +240,8 @@ function speckleCap(material) {
     veinWidth: { value: 0 },
     veinStrength: { value: 0 },
     cloudStrength: { value: 0 },
-    capEmissive: { value: 0 }
+    capEmissive: { value: 0 },
+    capId: { value: 0 }
   };
   material.userData.stoneUniforms = stoneUniforms;
   const fade = material.onBeforeCompile;
@@ -259,6 +275,9 @@ function speckleCap(material) {
         uniform float veinStrength;
         uniform float cloudStrength;
         uniform float capEmissive;
+        uniform float capId;
+        uniform sampler2D capMask;
+        uniform vec2 maskSize;
         vec3 hash3(vec3 p) {
           p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
                    dot(p, vec3(269.5, 183.3, 246.1)),
@@ -348,6 +367,11 @@ function speckleCap(material) {
           return result;
         }`)
       .replace("#include <color_fragment>", `#include <color_fragment>
+        vec3 stone = diffuseColor.rgb;
+        // The stencil test runs after this shader, not before it, so without
+        // this branch every part's quad would pay for the stone over its whole
+        // area. The mask pass has already settled which cap owns the pixel.
+        if (abs(texture2D(capMask, gl_FragCoord.xy / maskSize).r * 255.0 - capId) < 0.5) {
         vec3 stonePoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
         float pixel = length(fwidth(stonePoint)) * 0.7;
         // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
@@ -388,10 +412,11 @@ function speckleCap(material) {
           float vein = 1.0 - smoothstep(halfWidth - edge, halfWidth + edge, offCentre);
           resin = mix(resin, veinColor, vein * veinStrength);
         }
-        vec3 stone = resin;
+        stone = resin;
         if (chipDensity > 0.0) {
           vec4 chip;
           float turn;${chipLayersGlsl}
+        }
         }
         diffuseColor.rgb = stone;`)
       .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
@@ -566,6 +591,10 @@ function resize() {
   if (!width || !height) return;
   renderer.setSize(width, height, false);
   composer.setSize(width, height);
+  const maskWidth = Math.round(width * renderer.getPixelRatio());
+  const maskHeight = Math.round(height * renderer.getPixelRatio());
+  capMask.setSize(maskWidth, maskHeight);
+  chipUniforms.maskSize.value.set(maskWidth, maskHeight);
   if (fxaaPass) {
     const pixelRatio = renderer.getPixelRatio();
     fxaaPass.material.uniforms.resolution.value.set(1 / (width * pixelRatio), 1 / (height * pixelRatio));
@@ -881,6 +910,7 @@ function createStencilGroup(geometry, renderOrder) {
   backMaterial.stencilZPass = THREE.IncrementWrapStencilOp;
   const backFaces = new THREE.Mesh(geometry, backMaterial);
   backFaces.renderOrder = renderOrder;
+  backFaces.layers.enable(MASK_LAYER);
   group.add(backFaces);
 
   const frontMaterial = baseMaterial.clone();
@@ -891,6 +921,7 @@ function createStencilGroup(geometry, renderOrder) {
   frontMaterial.stencilZPass = THREE.DecrementWrapStencilOp;
   const frontFaces = new THREE.Mesh(geometry, frontMaterial);
   frontFaces.renderOrder = renderOrder;
+  frontFaces.layers.enable(MASK_LAYER);
   group.add(frontFaces);
   baseMaterial.dispose();
   return group;
@@ -934,7 +965,16 @@ function applyStoneSettings(material, settings) {
   uniforms.capEmissive.value = settings.emissive;
 }
 
-function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
+// Writes the cap's id where the stencil says the cap is; the rest stays 0.
+const maskCapMaterial = (capId) => new THREE.ShaderMaterial({
+  uniforms: { capId: { value: capId / 255 } },
+  vertexShader: "void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+  fragmentShader: "uniform float capId; void main() { gl_FragColor = vec4(capId, 0.0, 0.0, 1.0); }",
+  depthTest: false,
+  depthWrite: false
+});
+
+function createCap(meshMaterial, renderOrder, vertexColor, modelId, capId) {
   const capMaterial = fadeWithDistance(meshMaterial.clone());
   if (!DIAGNOSTICS.plainCap) speckleCap(capMaterial);
   capMaterial.clippingPlanes = [];
@@ -959,12 +999,16 @@ function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
   } else {
     applyStoneSettings(capMaterial, entry.settings);
   }
-  capMaterial.stencilWrite = true;
-  capMaterial.stencilRef = 0;
-  capMaterial.stencilFunc = THREE.NotEqualStencilFunc;
-  capMaterial.stencilFail = THREE.ReplaceStencilOp;
-  capMaterial.stencilZFail = THREE.ReplaceStencilOp;
-  capMaterial.stencilZPass = THREE.ReplaceStencilOp;
+  const maskMaterial = maskCapMaterial(capId);
+  for (const material of [capMaterial, maskMaterial]) {
+    material.stencilWrite = true;
+    material.stencilRef = 0;
+    material.stencilFunc = THREE.NotEqualStencilFunc;
+    material.stencilFail = THREE.ReplaceStencilOp;
+    material.stencilZFail = THREE.ReplaceStencilOp;
+    material.stencilZPass = THREE.ReplaceStencilOp;
+  }
+  if (capMaterial.userData.stoneUniforms) capMaterial.userData.stoneUniforms.capId.value = capId;
 
   const cap = new THREE.Mesh(capGeometry, capMaterial);
   cap.layers.enable(1);
@@ -974,6 +1018,12 @@ function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
   };
   cap.onAfterRender = (activeRenderer) => activeRenderer.clearStencil();
   capGroup.add(cap);
+
+  const maskCap = new THREE.Mesh(capGeometry, maskMaterial);
+  maskCap.layers.set(MASK_LAYER);
+  maskCap.renderOrder = renderOrder;
+  maskCap.onAfterRender = (activeRenderer) => activeRenderer.clearStencil();
+  capGroup.add(maskCap);
 }
 
 const nextIdle = () => new Promise((resolve) =>
@@ -1053,7 +1103,7 @@ function loadModel(model, modelId) {
     const visibleMesh = new THREE.Mesh(part.geometry, material);
     visibleMesh.renderOrder = index * 3 + 3;
     modelOrientation.add(visibleMesh);
-    createCap(materialList[0], index * 3 + 2, part.vertexColor, modelId);
+    createCap(materialList[0], index * 3 + 2, part.vertexColor, modelId, index + 1);
   }
 
   modelExtremePoints = model.extremePoints;
@@ -1685,6 +1735,16 @@ function createStats() {
   };
 }
 
+function renderCapMask() {
+  const layers = camera.layers.mask;
+  camera.layers.set(MASK_LAYER);
+  renderer.setRenderTarget(capMask);
+  renderer.clear(true, true, true);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  camera.layers.mask = layers;
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now();
@@ -1712,6 +1772,7 @@ function animate() {
   specimen.scale.setScalar(galleryScale);
   updateCutPlane();
   for (const item of galleryItems.values()) item.spinner.quaternion.copy(specimen.quaternion);
+  renderCapMask();
   composer.render();
   stats?.add(frameInterval, performance.now() - now);
 }
