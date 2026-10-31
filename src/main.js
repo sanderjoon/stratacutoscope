@@ -89,7 +89,8 @@ function showModelIdentity(index) {
 const canvas = document.querySelector("#scene");
 const isTouchDevice = navigator.maxTouchPoints > 0 ||
   window.matchMedia("(pointer: coarse)").matches;
-gyroscopeButton.hidden = !isTouchDevice || !("DeviceOrientationEvent" in window);
+// The gyroscope is hidden for now: its rotation misbehaves and wants another look.
+gyroscopeButton.hidden = true;
 
 // The page background shows through a transparent canvas, so the per-model
 // background colour is exact and unaffected by tone mapping in post-processing.
