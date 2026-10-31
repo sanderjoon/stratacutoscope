@@ -193,12 +193,10 @@ function speckleCap(material) {
   const stoneUniforms = {
     chipColors: { value: Array.from({ length: CHIP_COLOR_COUNT }, () => new THREE.Color()) },
     veinColor: { value: new THREE.Color() },
-    veinTint: { value: 0 },
-    stripeStrength: { value: 0 },
-    stripeScale: { value: 1 },
-    stripeAngle: { value: 0 },
-    stripeWave: { value: 0 },
-    stripeContrast: { value: 0 },
+    veinWave: { value: 0 },
+    veinLayers: { value: 0 },
+    veinAngle: { value: 0 },
+    veinContrast: { value: 0 },
     chipDensity: { value: 1 },
     chipEmbed: { value: 0 },
     veinScale: { value: 1 },
@@ -226,12 +224,10 @@ function speckleCap(material) {
         uniform float chipTurn;
         uniform vec3 chipColors[${CHIP_COLOR_COUNT}];
         uniform vec3 veinColor;
-        uniform float veinTint;
-        uniform float stripeStrength;
-        uniform float stripeScale;
-        uniform float stripeAngle;
-        uniform float stripeWave;
-        uniform float stripeContrast;
+        uniform float veinWave;
+        uniform float veinLayers;
+        uniform float veinAngle;
+        uniform float veinContrast;
         uniform float chipDensity;
         uniform float chipEmbed;
         uniform float veinScale;
@@ -319,22 +315,19 @@ function speckleCap(material) {
         float pixel = length(fwidth(stonePoint)) * 0.7;
         // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
         vec3 resin = diffuseColor.rgb * (1.0 + cloudStrength * fbm(stonePoint * veinScale * 0.5 + 5.3));
-        // Veins are the zero crossings of a noise field, warped by another so
-        // they wander and branch like marble. A finer set lies underneath.
+        // Veins: bands through the model, stacked along a tilted direction
+        // (veinLayers per cell) and bent by a warped noise (veinWave bands'
+        // worth). With no layers only the noise is left and the bands become
+        // its contours, wandering like marble. Each band's period holds one
+        // vein of veinWidth, with edges as hard as veinContrast asks.
         vec3 veinPoint = stonePoint * veinScale;
         veinPoint += 0.9 * vec3(fbm(veinPoint + 3.1), fbm(veinPoint + 9.7), fbm(veinPoint + 15.9));
-        float vein = 1.0 - smoothstep(0.0, veinWidth, abs(fbm(veinPoint)));
-        float fineVein = 1.0 - smoothstep(0.0, veinWidth * 0.5, abs(fbm(veinPoint * 2.1 + 27.3)));
-        vec3 veinColour = mix(diffuseColor.rgb * 0.45, veinColor, veinTint);
-        // Stripes: parallel layers tilted about the x axis, bent by the same
-        // noise so they run like waves, with their edges as hard as asked.
-        vec3 stripeNormal = vec3(0.0, cos(stripeAngle), sin(stripeAngle));
-        float layer = dot(stonePoint, stripeNormal) * stripeScale + stripeWave * fbm(veinPoint + 31.7);
-        float stripe = sin(layer * 6.2831853) * 0.5 + 0.5;
-        float edge = mix(0.5, 0.02, stripeContrast);
-        stripe = smoothstep(0.5 - edge, 0.5 + edge, stripe);
-        float veinMask = max(max(vein, fineVein * 0.5) * veinStrength, stripe * stripeStrength);
-        resin = mix(resin, veinColour, veinMask);
+        vec3 layerNormal = vec3(0.0, cos(veinAngle), sin(veinAngle));
+        float band = dot(stonePoint, layerNormal) * veinLayers + veinWave * fbm(veinPoint);
+        float offCentre = abs(fract(band) - 0.5);
+        float edge = mix(0.25, 0.004, veinContrast);
+        float vein = 1.0 - smoothstep(veinWidth * 0.5 - edge, veinWidth * 0.5 + edge, offCentre);
+        resin = mix(resin, veinColor, vein * veinStrength);
         float stoneRadius = length(stonePoint.xz);
         float stoneTurns = atan(stonePoint.z, stonePoint.x) / 6.2831853 + 0.5;
         vec3 stone = resin;
@@ -859,12 +852,10 @@ function applyStoneSettings(material, settings) {
   const uniforms = material.userData.stoneUniforms;
   settings.chipColors.forEach((hex, index) => uniforms.chipColors.value[index].set(hex));
   uniforms.veinColor.value.set(settings.veinColor);
-  uniforms.veinTint.value = settings.veinTint;
-  uniforms.stripeStrength.value = settings.stripeStrength;
-  uniforms.stripeScale.value = settings.stripeScale;
-  uniforms.stripeAngle.value = THREE.MathUtils.degToRad(settings.stripeAngle);
-  uniforms.stripeWave.value = settings.stripeWave;
-  uniforms.stripeContrast.value = settings.stripeContrast;
+  uniforms.veinWave.value = settings.veinWave;
+  uniforms.veinLayers.value = settings.veinLayers;
+  uniforms.veinAngle.value = THREE.MathUtils.degToRad(settings.veinAngle);
+  uniforms.veinContrast.value = settings.veinContrast;
   uniforms.chipDensity.value = settings.chipDensity;
   uniforms.chipEmbed.value = settings.chipEmbed;
   uniforms.veinScale.value = settings.veinScale;

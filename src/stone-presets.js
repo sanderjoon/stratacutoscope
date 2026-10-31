@@ -6,20 +6,19 @@
 // a replacement entry for the current model.
 export const STONE_DEFAULTS = {
   chipColors: ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"], // the chips' tones, picked at random per chip
-  veinColor: "#141414", // what the veins are tinted toward
-  veinTint: 0.4, // how far a vein's core goes toward veinColor (1: the colour itself)
-  // Stripes: parallel layers through the model in the vein colour, bent into
-  // waves. Off at strength 0.
-  stripeStrength: 0,
-  stripeScale: 0.25, // layers per base cell
-  stripeAngle: 0, // degrees of tilt from horizontal, about the model's x axis
-  stripeWave: 0.5, // how far the noise bends the layers, in layers
-  stripeContrast: 0.5, // 0: soft sine, 1: hard-edged bands
   chipDensity: 1, // multiplier on every chip layer's density
   chipEmbed: 0.5, // how far a chip's tone can sink toward the resin colour
-  veinScale: 0.22, // in base cells; smaller is a wider, lazier vein pattern
-  veinWidth: 0.07, // bold veins; the finer second set is half as wide and strong
-  veinStrength: 0.7,
+  // Veins: bands of one colour through the resin, repeating along a direction
+  // (veinLayers) and/or following noise (veinWave). Straight stripes at one
+  // end, wandering marble veins at the other.
+  veinColor: "#141414",
+  veinStrength: 0.7, // how solidly the colour covers the resin
+  veinScale: 0.22, // of the noise, in base cells; smaller is a wider, lazier wander
+  veinWave: 1, // how far the noise bends the bands, in bands
+  veinLayers: 0, // straight bands per base cell; 0 leaves only the noise
+  veinAngle: 0, // degrees of tilt from horizontal, about the model's x axis
+  veinWidth: 0.08, // of each band's period that is vein
+  veinContrast: 0.6, // 0: soft gradient, 1: hard edge
   cloudStrength: 0.14, // mottling of the resin's brightness
   emissive: 0.65 // how much the stone glows on its own, so the cut reads flat
 };

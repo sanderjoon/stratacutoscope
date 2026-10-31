@@ -9,15 +9,13 @@ const RANGES = {
   metalness: { min: 0, max: 1 },
   chipDensity: { min: 0, max: 2 },
   chipEmbed: { min: 0, max: 1 },
-  veinScale: { min: 0.02, max: 1 },
-  veinWidth: { min: 0, max: 0.3 },
   veinStrength: { min: 0, max: 1 },
-  veinTint: { min: 0, max: 1 },
-  stripeStrength: { min: 0, max: 1 },
-  stripeScale: { min: 0.02, max: 2 },
-  stripeAngle: { min: -90, max: 90 },
-  stripeWave: { min: 0, max: 3 },
-  stripeContrast: { min: 0, max: 1 },
+  veinScale: { min: 0.02, max: 1 },
+  veinWave: { min: 0, max: 3 },
+  veinLayers: { min: 0, max: 2 },
+  veinAngle: { min: -90, max: 90 },
+  veinWidth: { min: 0, max: 1 },
+  veinContrast: { min: 0, max: 1 },
   cloudStrength: { min: 0, max: 0.6 },
   emissive: { min: 0, max: 1.5 }
 };
@@ -44,7 +42,7 @@ function presetEntry(entries) {
 function buildPrompt(model, entries) {
   const json = JSON.stringify(presetEntry(entries), null, 2);
   return [
-    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness (chipColors lists the chips' four tones and veinColor the veins' tint, as sRGB hex). Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
+    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness (chipColors lists the chips' four tones and veinColor the veins' colour, as sRGB hex). Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
     "",
     "```json",
     json,
