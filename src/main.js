@@ -194,6 +194,8 @@ function speckleCap(material) {
     chipColors: { value: Array.from({ length: CHIP_COLOR_COUNT }, () => new THREE.Color()) },
     veinColor: { value: new THREE.Color() },
     veinWave: { value: 0 },
+    veinRipple: { value: 0 },
+    veinRippleScale: { value: 1 },
     veinLayers: { value: 0 },
     veinAngle: { value: 0 },
     veinContrast: { value: 0 },
@@ -225,6 +227,8 @@ function speckleCap(material) {
         uniform vec3 chipColors[${CHIP_COLOR_COUNT}];
         uniform vec3 veinColor;
         uniform float veinWave;
+        uniform float veinRipple;
+        uniform float veinRippleScale;
         uniform float veinLayers;
         uniform float veinAngle;
         uniform float veinContrast;
@@ -261,6 +265,12 @@ function speckleCap(material) {
             amplitude *= 0.5;
           }
           return sum;
+        }
+        // Noise in cylindrical coordinates (radius, arc, height) that joins up
+        // around the axis: a turn of the model slides a pattern through the
+        // cut instead of reshaping it. The arc runs from 0 to period per turn.
+        float roundNoise(vec3 c, float period) {
+          return mix(fbm(c), fbm(c - vec3(0.0, period, 0.0)), c.y / period);
         }
         // u is cylindrical, in cells: (radius, angle, height), with the angle
         // wrapping every turn cells. rgb: chip colour, a: coverage
@@ -315,21 +325,34 @@ function speckleCap(material) {
         float pixel = length(fwidth(stonePoint)) * 0.7;
         // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
         vec3 resin = diffuseColor.rgb * (1.0 + cloudStrength * fbm(stonePoint * veinScale * 0.5 + 5.3));
-        // Veins: bands through the model, stacked along a tilted direction
-        // (veinLayers per cell) and bent by a warped noise (veinWave bands'
-        // worth). With no layers only the noise is left and the bands become
-        // its contours, wandering like marble. Each band's period holds one
-        // vein of veinWidth, with edges as hard as veinContrast asks.
-        vec3 veinPoint = stonePoint * veinScale;
-        veinPoint += 0.9 * vec3(fbm(veinPoint + 3.1), fbm(veinPoint + 9.7), fbm(veinPoint + 15.9));
-        vec3 layerNormal = vec3(0.0, cos(veinAngle), sin(veinAngle));
-        float band = dot(stonePoint, layerNormal) * veinLayers + veinWave * fbm(veinPoint);
-        float offCentre = abs(fract(band) - 0.5);
-        float edge = mix(0.25, 0.004, veinContrast);
-        float vein = 1.0 - smoothstep(veinWidth * 0.5 - edge, veinWidth * 0.5 + edge, offCentre);
-        resin = mix(resin, veinColor, vein * veinStrength);
         float stoneRadius = length(stonePoint.xz);
         float stoneTurns = atan(stonePoint.z, stonePoint.x) / 6.2831853 + 0.5;
+        // Veins: bands through the model, stacked along the axis and tilted
+        // outward by veinAngle (veinLayers per cell), bent by a warped noise
+        // (veinWave bands' worth) and by a plain sine wave along the radius
+        // (veinRipple). Everything is cylindrical about the turntable axis,
+        // like the chips, so a turn slides the bands through the cut. With no
+        // layers only the bending is left and the bands become its contours,
+        // wandering like marble. Each band's period holds one vein of
+        // veinWidth, with edges as hard as veinContrast asks.
+        float arcPeriod = chipTurn * veinScale;
+        vec3 veinPoint = vec3(stoneRadius * veinScale, stoneTurns * arcPeriod, stonePoint.y * veinScale);
+        vec3 warped = veinPoint + 0.9 * vec3(
+          roundNoise(veinPoint + vec3(3.1, 0.0, 15.9), arcPeriod),
+          0.0,
+          roundNoise(veinPoint + vec3(9.7, 0.0, 27.3), arcPeriod));
+        float wander = roundNoise(warped, arcPeriod);
+        float band = (stonePoint.y * cos(veinAngle) + stoneRadius * sin(veinAngle)) * veinLayers
+          + veinWave * wander
+          + veinRipple * sin(stoneRadius * veinRippleScale * 6.2831853)
+          + 0.5; // so an unbent band's vein sits where the noise crosses zero
+        float offCentre = abs(fract(band) - 0.5);
+        float halfWidth = veinWidth * 0.5;
+        // The edge softens in proportion to the width, so a thin vein still
+        // reaches its full colour at its centre.
+        float edge = halfWidth * mix(1.0, 0.03, veinContrast);
+        float vein = 1.0 - smoothstep(halfWidth - edge, halfWidth + edge, offCentre);
+        resin = mix(resin, veinColor, vein * veinStrength);
         vec3 stone = resin;
         vec4 chip;
         float turn;${chipLayersGlsl}
@@ -853,6 +876,8 @@ function applyStoneSettings(material, settings) {
   settings.chipColors.forEach((hex, index) => uniforms.chipColors.value[index].set(hex));
   uniforms.veinColor.value.set(settings.veinColor);
   uniforms.veinWave.value = settings.veinWave;
+  uniforms.veinRipple.value = settings.veinRipple;
+  uniforms.veinRippleScale.value = settings.veinRippleScale;
   uniforms.veinLayers.value = settings.veinLayers;
   uniforms.veinAngle.value = THREE.MathUtils.degToRad(settings.veinAngle);
   uniforms.veinContrast.value = settings.veinContrast;

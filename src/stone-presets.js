@@ -14,9 +14,11 @@ export const STONE_DEFAULTS = {
   veinColor: "#141414",
   veinStrength: 0.7, // how solidly the colour covers the resin
   veinScale: 0.22, // of the noise, in base cells; smaller is a wider, lazier wander
-  veinWave: 1, // how far the noise bends the bands, in bands
+  veinWave: 1, // how far the noise bends the bands, in bands; 0 leaves them unbent
+  veinRipple: 0, // how far a plain sine wave along the radius bends them, in bands
+  veinRippleScale: 0.3, // waves of that ripple per base cell
   veinLayers: 0, // straight bands per base cell; 0 leaves only the noise
-  veinAngle: 0, // degrees of tilt from horizontal, about the model's x axis
+  veinAngle: 0, // degrees the bands tilt outward from horizontal, like a cone
   veinWidth: 0.08, // of each band's period that is vein
   veinContrast: 0.6, // 0: soft gradient, 1: hard edge
   cloudStrength: 0.14, // mottling of the resin's brightness

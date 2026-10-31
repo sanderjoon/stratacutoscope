@@ -12,6 +12,8 @@ const RANGES = {
   veinStrength: { min: 0, max: 1 },
   veinScale: { min: 0.02, max: 1 },
   veinWave: { min: 0, max: 3 },
+  veinRipple: { min: 0, max: 2 },
+  veinRippleScale: { min: 0.05, max: 2 },
   veinLayers: { min: 0, max: 2 },
   veinAngle: { min: -90, max: 90 },
   veinWidth: { min: 0, max: 1 },
@@ -20,6 +22,8 @@ const RANGES = {
   emissive: { min: 0, max: 1.5 }
 };
 const DECIMALS = 3;
+// The picker opens in place under its swatch; as a popup it was clipped by the pane.
+const COLOR_OPTIONS = { view: "color", picker: "inline", expanded: false };
 
 const round = (value) => Number(value.toFixed(DECIMALS));
 
@@ -101,12 +105,12 @@ export function createStoneTweaks(onChange) {
       // The chip colours are bound through a copy, one key per chip.
       const chips = Object.fromEntries(entry.settings.chipColors.map((hex, index) => [`chip ${index + 1}`, hex]));
       Object.keys(chips).forEach((key, index) => {
-        folder.addBinding(chips, key, { view: "color" }).on("change", ({ value }) => {
+        folder.addBinding(chips, key, COLOR_OPTIONS).on("change", ({ value }) => {
           entry.settings.chipColors[index] = value;
           onChange(entry);
         });
       });
-      folder.addBinding(entry.settings, "veinColor", { view: "color", label: "vein" })
+      folder.addBinding(entry.settings, "veinColor", { ...COLOR_OPTIONS, label: "vein" })
         .on("change", () => onChange(entry));
       for (const [key, range] of Object.entries(RANGES)) {
         folder.addBinding(entry.settings, key, { ...range, step: 0.001 })

@@ -40,7 +40,8 @@ body {
   touch-action: none;
 }
 
-canvas {
+/* The scene only: the stone pane draws its colour palette on a canvas too. */
+#scene {
   position: absolute;
   inset: 0;
   display: block;
