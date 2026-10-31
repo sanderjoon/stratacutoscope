@@ -12,6 +12,12 @@ const RANGES = {
   veinScale: { min: 0.02, max: 1 },
   veinWidth: { min: 0, max: 0.3 },
   veinStrength: { min: 0, max: 1 },
+  veinTint: { min: 0, max: 1 },
+  stripeStrength: { min: 0, max: 1 },
+  stripeScale: { min: 0.02, max: 2 },
+  stripeAngle: { min: -90, max: 90 },
+  stripeWave: { min: 0, max: 3 },
+  stripeContrast: { min: 0, max: 1 },
   cloudStrength: { min: 0, max: 0.6 },
   emissive: { min: 0, max: 1.5 }
 };

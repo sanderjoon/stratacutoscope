@@ -7,6 +7,14 @@
 export const STONE_DEFAULTS = {
   chipColors: ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"], // the chips' tones, picked at random per chip
   veinColor: "#141414", // what the veins are tinted toward
+  veinTint: 0.4, // how far a vein's core goes toward veinColor (1: the colour itself)
+  // Stripes: parallel layers through the model in the vein colour, bent into
+  // waves. Off at strength 0.
+  stripeStrength: 0,
+  stripeScale: 0.25, // layers per base cell
+  stripeAngle: 0, // degrees of tilt from horizontal, about the model's x axis
+  stripeWave: 0.5, // how far the noise bends the layers, in layers
+  stripeContrast: 0.5, // 0: soft sine, 1: hard-edged bands
   chipDensity: 1, // multiplier on every chip layer's density
   chipEmbed: 0.5, // how far a chip's tone can sink toward the resin colour
   veinScale: 0.22, // in base cells; smaller is a wider, lazier vein pattern
