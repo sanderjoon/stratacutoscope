@@ -25,7 +25,31 @@ export const STONE_DEFAULTS = {
   emissive: 0.65 // how much the stone glows on its own, so the cut reads flat
 };
 
-export const STONE_PRESETS = {};
+export const STONE_PRESETS = {
+  dialogue: {
+    "#d40000": {
+      chipColors: ["#991b1b", "#7f5c1b", "#b2811e", "#a5164a"],
+      veinColor: "#af0000",
+      chipDensity: 0.022,
+      chipEmbed: 0.565,
+      veinStrength: 1,
+      veinScale: 1,
+      veinWave: 0.815,
+      veinRipple: 0.783,
+      veinRippleScale: 0.241,
+      veinLayers: 1.674,
+      veinAngle: 17.609,
+      veinWidth: 0.489,
+      cloudStrength: 0,
+      emissive: 1.5
+    },
+    "#ffeb8e": {
+      chipColors: ["#b85b5b", "#b8924c", "#66480d", "#956b1e"],
+      chipDensity: 2,
+      veinStrength: 0
+    }
+  }
+};
 
 export function stoneSettings(modelId, hex, material) {
   const settings = {
