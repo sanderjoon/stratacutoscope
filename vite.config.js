@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
+import basicSsl from "@vitejs/plugin-basic-ssl";
 import { MODELS, inkColorFor } from "./src/models.js";
 
 // Show the model's background and name from the first frame: a tiny inline
@@ -24,10 +25,12 @@ function inlineModelColours() {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Relative URLs so the same build works at /stratacutoscope/ and /stratacutoscope/dev/.
   base: "./",
-  plugins: [inlineModelColours()],
+  // `yarn dev:lan` serves over https to the LAN with a self-signed certificate:
+  // phones need a secure page for the audio worklet and the motion sensors.
+  plugins: [inlineModelColours(), ...(mode === "lan" ? [basicSsl()] : [])],
   build: {
     // three.js alone is ~600 kB minified; one chunk is fine for a single-page viewer.
     chunkSizeWarningLimit: 1000,
@@ -41,4 +44,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));
