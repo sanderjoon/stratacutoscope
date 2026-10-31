@@ -5,7 +5,6 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
-import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
 import { STONE_DEFAULTS, stoneSettings } from "./stone-presets.js";
@@ -140,25 +139,13 @@ if (isTouchDevice) {
   aoPass.configuration.denoiseRadius = 8;
 }
 composer.addPass(aoPass);
-composer.addPass(new OutputPass());
 // Fragments carry a distance-based alpha (see fadeWithDistance). The canvas is
-// composited premultiplied, so multiply colour by alpha once tone mapping is done.
-composer.addPass(new ShaderPass({
-  uniforms: { tDiffuse: { value: null } },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }`,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    varying vec2 vUv;
-    void main() {
-      vec4 texel = texture2D(tDiffuse, vUv);
-      gl_FragColor = vec4(texel.rgb * texel.a, texel.a);
-    }`
-}));
+// composited premultiplied, so the output shader multiplies colour by alpha as
+// its last step, once tone mapping and the sRGB transfer are done.
+const outputPass = new OutputPass();
+outputPass.material.fragmentShader = outputPass.material.fragmentShader
+  .replace(/}\s*$/, "gl_FragColor.rgb *= gl_FragColor.a;\n}");
+composer.addPass(outputPass);
 composer.addPass(new SMAAPass(1, 1));
 
 // Distance haze in the page's background colour. Blending toward a fog colour
