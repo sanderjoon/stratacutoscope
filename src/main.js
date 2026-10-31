@@ -133,6 +133,12 @@ aoPass.configuration.gammaCorrection = false;
 aoPass.configuration.intensity = 2;
 aoPass.configuration.distanceFalloff = 1;
 aoPass.configuration.halfRes = isTouchDevice;
+// Phones: half the samples at half the resolution; the occlusion is soft anyway.
+if (isTouchDevice) {
+  aoPass.configuration.aoSamples = 8;
+  aoPass.configuration.denoiseSamples = 4;
+  aoPass.configuration.denoiseRadius = 8;
+}
 composer.addPass(aoPass);
 composer.addPass(new OutputPass());
 // Fragments carry a distance-based alpha (see fadeWithDistance). The canvas is
