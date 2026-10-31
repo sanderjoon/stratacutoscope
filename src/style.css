@@ -96,6 +96,29 @@ canvas {
 
 .about-content p { margin: 0 0 0.65em; }
 
+/* Gesture hints: action, dotted leader, effect, in three aligned columns. */
+.hints {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  column-gap: 0.5em;
+  row-gap: 0.2em;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto 0.65em;
+}
+
+.hints div { display: contents; }
+.hints dt { font-weight: 700; text-align: right; }
+.hints dd { margin: 0; text-align: left; }
+
+.hints .leader {
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0.6;
+}
+
+.hints .leader::before { content: "・・・・・・・・"; }
+
 /* Instructions differ by primary input: touch devices vs mouse/trackpad. */
 .touch-only { display: none; }
 @media (pointer: coarse) {

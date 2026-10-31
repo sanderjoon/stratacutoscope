@@ -50,12 +50,19 @@
         <div style="opacity: .9;" class="about-content">
           <p><img src="./stratacutoscope.gif" /><br>
           <p>All 3D models made by <a style="color:white;" href="https://www.sanderjoon.com" target="_blank"><b>Sander Joon</b></a> in Blender.</p>
-          <p class="touch-only"><b>Drag</b> to rotate<br><b>Pinch</b> to zoom and cut deeper</p>
-          <p class="mouse-only"><b>Drag</b> to rotate<br><b>Scroll</b> to zoom and cut deeper</p>
-          <p><b>Play</b> or <b>pause</b> the auto-rotation</p>
-          <p>Choose a model by name, or use <b>Prev</b>, <b>Next</b>, or the <b>dice</b> for a random model.</p>
-          <p class="touch-only">Enable <b>Gyroscope</b> to rotate with phone.</p>
-          <p><small style="opacity: 50%; font-style: italic;">Please reach out to <b>sander.joon@gmail.com</b> if you have any suggestions<i>!</i></small></p>
+          <div class="touch-only">
+            <dl class="hints">
+              <div><dt>Drag</dt><span class="leader" aria-hidden="true"></span><dd>rotate</dd></div>
+              <div><dt>Pinch</dt><span class="leader" aria-hidden="true"></span><dd>zoom and cut deeper</dd></div>
+            </dl>
+          </div>
+          <div class="mouse-only">
+            <dl class="hints">
+              <div><dt>Drag</dt><span class="leader" aria-hidden="true"></span><dd>rotate</dd></div>
+              <div><dt>Scroll</dt><span class="leader" aria-hidden="true"></span><dd>zoom and cut deeper</dd></div>
+            </dl>
+          </div>
+          <p><small style="opacity: 50%; font-style: italic;">Please reach out to <a style="color:white;" href="mailto:sander.joon@gmail.com"><b>sander.joon@gmail.com</b></a> if you have any suggestions<i>!</i></small></p>
         </div>
       </div>
       <nav class="model-navigation" aria-label="Model selection">
