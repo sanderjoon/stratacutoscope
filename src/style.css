@@ -11,6 +11,9 @@
   --ink-fallback: black;
   --ink: var(--ink-fallback);
   --muted: color-mix(in srgb, var(--ink) 60%, var(--bg));
+  /* Text size of the buttons and the help: grows with wide screens, one
+     step smaller on phones. */
+  --nav-font-size: clamp(13.333px, 0.9vw, 20px);
 }
 
 @supports (color: contrast-color(red)) {
@@ -97,8 +100,8 @@ canvas {
 .about-content {
   width: min(100%, 640px);
   margin: auto;
-  font-size: 16px;
-  line-height: 1.4;
+  font-size: var(--nav-font-size);
+  line-height: 1.5;
   text-align: center;
 }
 
@@ -192,6 +195,7 @@ button {
   min-height: 42px;
   padding: 0 10px;
   border: 0;
+  font-size: var(--nav-font-size);
   color: var(--ink);
   background: transparent;
   cursor: pointer;
@@ -365,6 +369,8 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 }
 
 @media (max-width: 600px) {
+  :root { --nav-font-size: 12px; }
+
   .footer {
     top: max(10px, env(safe-area-inset-top));
     right: max(12px, env(safe-area-inset-right));
@@ -387,7 +393,6 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   .model-name {
     padding-right: 5px;
     padding-left: 5px;
-    font-size: 12px;
     letter-spacing: 0.04em;
   }
 }
