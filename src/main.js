@@ -17,7 +17,17 @@ const INTRO_HAZE_RATIO = 0.3; // of the model's radius; fog depth at the start o
 const INTRO_DURATION = 2000; // ms
 const SLIDE_OUT_DURATION = 180; // ms
 const SLIDE_IN_DURATION = 420; // ms
-const SLIDE_TRAVEL = 0.3; // of the visible half-height; the fade does the rest
+const SLIDE_TRAVEL = 0.3; // of the visible half-width; the fade does the rest
+// Gallery: every model at once in a grid of equal cells. The camera pulls back
+// and the current model glides into its cell while the others fade in.
+const GALLERY_DURATION = 1400; // ms; the cut sweeps out and back in over the same time
+const GALLERY_PITCH = -Math.PI / 4; // the grid is seen from this far above
+const GALLERY_CELL = 2.3; // of the common radius; horizontal spacing between model centres
+const GALLERY_ROW = 2; // of the common radius; vertical spacing
+const GALLERY_MARGIN = 1.15; // of the grid's half-extent; air around the grid in the view
+const TAP_SLOP = 8; // px a press may move and still pick a model
+const TAP_DURATION = 500; // ms
+const FLICK_WINDOW = 80; // ms; a release later than this after the last move is not a flick
 const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
@@ -55,7 +65,7 @@ const modelPicker = document.querySelector(".model-picker");
 const modelPickerToggle = document.querySelector("#model-picker-toggle");
 const modelPickerMenu = document.querySelector("#model-picker-menu");
 const previousModelButton = document.querySelector("#previous-model");
-const randomModelButton = document.querySelector("#random-model");
+const galleryToggleButton = document.querySelector("#gallery-toggle");
 const nextModelButton = document.querySelector("#next-model");
 const themeColorMeta = document.querySelector('meta[name="theme-color"]');
 
@@ -85,7 +95,7 @@ const scene = new THREE.Scene();
 // Only near/far are used: fadeWithDistance() turns fog into transparency.
 scene.fog = new THREE.Fog(0x000000, 1, 2);
 
-const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
+const camera = new THREE.PerspectiveCamera(34, 1, 0.01, 200);
 camera.up.set(0, 1, 0);
 camera.layers.enable(1);
 const renderer = new THREE.WebGLRenderer({
@@ -143,11 +153,12 @@ composer.addPass(new SMAAPass(1, 1));
 // Distance haze in the page's background colour. Blending toward a fog colour
 // would be shifted by tone mapping, so instead the fragment's alpha falls off
 // between fogNear and fogFar and the CSS background shows through.
-// Whole-model opacity, used by the switch transition. Shared by every material.
+// Whole-model opacity, used by the switch transition. Shared by every material
+// of the specimen; a gallery clone passes its own.
 const modelOpacity = { value: 1 };
-function fadeWithDistance(material) {
+function fadeWithDistance(material, opacity = modelOpacity) {
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.modelOpacity = modelOpacity;
+    shader.uniforms.modelOpacity = opacity;
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <fog_pars_fragment>", "#include <fog_pars_fragment>\nuniform float modelOpacity;")
       .replace(
@@ -369,6 +380,40 @@ let introTween = null;
 let slideOffset = 0;
 let slideTween = null;
 const slideAxis = new THREE.Vector3();
+// Gallery: the current model is the specimen itself, moved to its cell and
+// scaled to the common size; the others are uncut clones, one group each.
+let galleryActive = false;
+let galleryTween = null;
+let galleryModels = [];
+let galleryRadius = 0; // the common radius every model is scaled to
+let galleryDistance = 0; // camera distance at which the whole grid is in view
+let galleryBlend = 0; // 0: haze as in the single view, 1: lifted clear of the grid
+const gallerySlots = []; // cell centres, by model index
+const galleryItems = new Map(); // clones by model index
+const galleryGroup = new THREE.Group();
+scene.add(galleryGroup);
+// The clones fade by alpha but still write depth, which would punch holes in
+// the specimen wherever one lies in front of it on its way to or from its
+// cell. So the clones are drawn first, then the depth buffer is cleared (by
+// this empty draw) and the specimen goes on top of them.
+const GALLERY_CLONE_ORDER = -2;
+const galleryDepthClear = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false })
+);
+galleryDepthClear.renderOrder = GALLERY_CLONE_ORDER + 1;
+galleryDepthClear.frustumCulled = false;
+galleryDepthClear.visible = false;
+galleryDepthClear.onBeforeRender = (activeRenderer) => activeRenderer.clearDepth();
+galleryGroup.add(galleryDepthClear);
+const galleryOffset = new THREE.Vector3(); // the specimen's shift toward its cell
+let galleryScale = 1;
+// The cut plane's shift toward the camera beyond what the zoom sets, so the
+// gallery transition can sweep the cut on its own clock.
+let cutRetreat = 0;
+// The view left behind on entering the gallery; coming back to the same model restores it.
+let galleryReturn = null;
+let pendingGalleryIndex = -1; // a model tapped before the grid had spread
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let currentModelIndex = -1;
 let modelLoading = false;
@@ -413,7 +458,7 @@ function setLoading(loading) {
 function setModelNavigationDisabled(disabled) {
   modelPickerToggle.disabled = disabled;
   previousModelButton.disabled = disabled;
-  randomModelButton.disabled = disabled;
+  galleryToggleButton.disabled = disabled;
   nextModelButton.disabled = disabled;
   modelPickerMenu.querySelectorAll("button").forEach((button) => {
     button.disabled = disabled;
@@ -497,6 +542,10 @@ function resize() {
   camera.updateProjectionMatrix();
   if (modelBounds.isEmpty() === false) {
     fitCameraToModel();
+    if (galleryActive) {
+      layoutGallery();
+      if (!galleryTween) applyGalleryState(galleryView(), galleryView(), 1);
+    }
   }
 }
 
@@ -547,6 +596,12 @@ function fitCameraToModel() {
 // The zoom range is fixed per model so rotating never shifts the camera.
 function limitZoomToModel() {
   if (modelBounds.isEmpty()) return;
+  if (galleryActive) {
+    // The gallery transition drives the camera; nothing may clamp it back.
+    controls.minDistance = minCameraDistance;
+    controls.maxDistance = Infinity;
+    return;
+  }
   controls.minDistance = Math.max(
     minCameraDistance,
     fitCameraDistance - modelRadius / CUT_ZOOM_SENSITIVITY
@@ -556,10 +611,12 @@ function limitZoomToModel() {
 
 // The cut plane always sits fitCameraDistance from the camera (zoom and cut
 // move together), so the haze starts exactly at the cut and deepens behind it.
+// In the gallery the haze is lifted clear of the grid.
 function updateDistanceFade() {
-  scene.fog.near = fitCameraDistance;
-  scene.fog.far = fitCameraDistance +
-    modelRadius * THREE.MathUtils.lerp(FOG_DEPTH_RATIO, INTRO_HAZE_RATIO, introHaze);
+  const near = fitCameraDistance;
+  const far = near + modelRadius * THREE.MathUtils.lerp(FOG_DEPTH_RATIO, INTRO_HAZE_RATIO, introHaze);
+  scene.fog.near = THREE.MathUtils.lerp(near, galleryDistance * 2, galleryBlend);
+  scene.fog.far = THREE.MathUtils.lerp(far, galleryDistance * 4, galleryBlend);
 }
 
 // Frame-driven tweens. update() receives eased progress 0..1 and is called once
@@ -567,6 +624,7 @@ function updateDistanceFade() {
 const activeTweens = new Set();
 const easeOutCubic = (t) => 1 - (1 - t) ** 3;
 const easeInCubic = (t) => t * t * t;
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 function tween(duration, easing, update) {
   if (reducedMotion.matches) duration = 0;
   const start = performance.now();
@@ -650,7 +708,7 @@ canvas.addEventListener("wheel", endIntro, { passive: true });
 function updateCutPlane() {
   cameraDirection.copy(camera.position).sub(controls.target).normalize();
   const zoomInDistance = fitCameraDistance - camera.position.distanceTo(controls.target);
-  const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY;
+  const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY + cutRetreat;
   cutPoint.copy(controls.target).addScaledVector(cameraDirection, cutDistance);
   cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.clone().negate(), cutPoint);
   capGroup.position.copy(cutPoint);
@@ -670,9 +728,10 @@ function motorVelocity() {
   return motionEnabled ? -AUTO_ROTATION_SPEED : 0;
 }
 
+// The gallery is seen from a fixed height, so only the turn responds there.
 function applyDragRotation(horizontalAngle, verticalAngle) {
   specimenYaw -= horizontalAngle;
-  specimenPitch -= verticalAngle;
+  if (!galleryActive) specimenPitch -= verticalAngle;
   updateSpecimenRotation();
 }
 
@@ -685,7 +744,13 @@ function updateSpecimenRotation() {
 
 canvas.addEventListener("pointerdown", (event) => {
   endIntro();
-  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  activePointers.set(event.pointerId, {
+    x: event.clientX,
+    y: event.clientY,
+    startX: event.clientX,
+    startY: event.clientY,
+    time: event.timeStamp
+  });
   if (activePointers.size === 1) {
     previousPointerTime = event.timeStamp;
   } else {
@@ -695,10 +760,23 @@ canvas.addEventListener("pointerdown", (event) => {
 
 canvas.addEventListener("pointermove", (event) => {
   const previous = activePointers.get(event.pointerId);
-  if (!previous) return;
+  // A mouse released outside the window sends no pointerup; it comes back
+  // with no button down, which ends the drag.
+  if (previous && event.pointerType === "mouse" && event.buttons === 0) {
+    finishPointer(event);
+    return;
+  }
+  if (!previous) {
+    if (galleryActive && !galleryTween && !activePointers.size) {
+      const cursor = galleryIndexAt(event.clientX, event.clientY) >= 0 ? "pointer" : "";
+      if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
+    }
+    return;
+  }
   const deltaX = event.clientX - previous.x;
   const deltaY = event.clientY - previous.y;
-  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  previous.x = event.clientX;
+  previous.y = event.clientY;
   if (activePointers.size !== 1) return;
 
   const elapsed = Math.max((event.timeStamp - previousPointerTime) / 1000, 1 / 120);
@@ -715,8 +793,29 @@ canvas.addEventListener("pointermove", (event) => {
 });
 
 const finishPointer = (event) => {
+  const pointer = activePointers.get(event.pointerId);
   activePointers.delete(event.pointerId);
-  if (activePointers.size) angularVelocity.set(motorVelocity(), 0);
+  // The spin set by the last move carries on as a flick only if the release
+  // follows it closely; a finger that stopped first, or a release that only
+  // reaches us late, leaves the motor speed.
+  if (activePointers.size || event.timeStamp - previousPointerTime > FLICK_WINDOW) {
+    angularVelocity.set(motorVelocity(), 0);
+  }
+  if (activePointers.size) return;
+  // A short press that did not drag picks a model from the gallery.
+  const isTap = event.type === "pointerup" && pointer &&
+    Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) < TAP_SLOP &&
+    event.timeStamp - pointer.time < TAP_DURATION;
+  if (isTap && galleryActive) {
+    const index = galleryIndexAt(event.clientX, event.clientY);
+    if (index < 0) return;
+    // A tap while the grid is still spreading is kept for when it has.
+    if (galleryTween) {
+      pendingGalleryIndex = index;
+    } else {
+      selectFromGallery(index);
+    }
+  }
 };
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
@@ -962,7 +1061,271 @@ async function enableGyroscope() {
   }
 }
 
+function rememberModelInUrl(index, historyMode) {
+  if (!historyMode) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("model", MODELS[index].id);
+  window.history[`${historyMode}State`]({}, "", url);
+}
+
+// Gallery. The grid lies in the plane through the target, facing the camera.
+// Cells are one common size so every model shows at the same size; the last
+// row is centred.
+function layoutGallery() {
+  const count = MODELS.length;
+  const columns = THREE.MathUtils.clamp(Math.round(Math.sqrt(count * camera.aspect)), 1, count);
+  const rows = Math.ceil(count / columns);
+  const cell = GALLERY_CELL * galleryRadius;
+  const rowHeight = GALLERY_ROW * galleryRadius;
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+  for (let index = 0; index < count; index++) {
+    const row = Math.floor(index / columns);
+    const inRow = Math.min(columns, count - row * columns);
+    const column = index - row * columns;
+    gallerySlots[index] = (gallerySlots[index] ?? new THREE.Vector3())
+      .copy(right).multiplyScalar((column - (inRow - 1) / 2) * cell)
+      .addScaledVector(up, ((rows - 1) / 2 - row) * rowHeight);
+  }
+  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+  const horizontalTangent = verticalTangent * camera.aspect;
+  galleryDistance = Math.max(
+    (columns * cell) / 2 / horizontalTangent,
+    (rows * rowHeight) / 2 / verticalTangent
+  ) * GALLERY_MARGIN + galleryRadius;
+  // Never closer than where the current model is clear of the cut.
+  galleryDistance = Math.max(galleryDistance, uncutDistance() * 1.05);
+  for (const [index, item] of galleryItems) item.group.position.copy(gallerySlots[index]);
+}
+
+// Zoomed out to here, the cut plane clears the whole model.
+function uncutDistance() {
+  return fitCameraDistance + modelRadius * ZOOM_OUT_MARGIN;
+}
+
+function cameraDistance() {
+  return camera.position.distanceTo(controls.target);
+}
+
+function setCameraDistance(distance) {
+  cameraDirection.copy(camera.position).sub(controls.target).normalize();
+  camera.position.copy(controls.target).addScaledVector(cameraDirection, distance);
+}
+
+// One end of the gallery transition: where the camera is, how far the
+// specimen is tilted, where the cut plane sits (from the model's centre, in
+// radii, toward the camera) and how far the grid is spread (0: single view).
+function galleryView() {
+  return { distance: galleryDistance, pitch: GALLERY_PITCH, cut: ZOOM_OUT_MARGIN, spread: 1 };
+}
+
+function singleView(distance, pitch) {
+  return { distance, pitch, cut: (distance - fitCameraDistance) / modelRadius, spread: 0 };
+}
+
+// Everything moves together on one clock: the camera, the tilt, the grid's
+// spread (the specimen gliding to its cell and shrinking to the common size,
+// the clones fading in at theirs, the haze lifting) and the cut, which sweeps
+// out through the model as it goes and back in as it returns.
+function applyGalleryState(from, to, progress) {
+  const distance = THREE.MathUtils.lerp(from.distance, to.distance, progress);
+  const spread = THREE.MathUtils.lerp(from.spread, to.spread, progress);
+  specimenPitch = THREE.MathUtils.lerp(from.pitch, to.pitch, progress);
+  updateSpecimenRotation();
+  galleryBlend = spread;
+  // As seen from the camera, the specimen glides straight to its place and
+  // grows evenly, however far the camera has come: its offset and size are
+  // eased between the two views in screen terms, then scaled by the distance.
+  const seen = (view) => ({
+    offset: view.spread / view.distance,
+    size: THREE.MathUtils.lerp(1, galleryRadius / modelRadius, view.spread) / view.distance
+  });
+  const a = seen(from);
+  const b = seen(to);
+  galleryOffset.copy(gallerySlots[currentModelIndex])
+    .multiplyScalar(THREE.MathUtils.lerp(a.offset, b.offset, progress) * distance);
+  galleryScale = THREE.MathUtils.lerp(a.size, b.size, progress) * distance;
+  // The clones stay put while the camera closes in and would loom over the
+  // view, so they are gone before the camera is half-way there.
+  const fade = THREE.MathUtils.smoothstep(spread, 0.5, 1);
+  for (const item of galleryItems.values()) item.opacity.value = fade;
+  setCameraDistance(distance);
+  const cut = THREE.MathUtils.lerp(from.cut, to.cut, progress) * modelRadius * galleryScale;
+  cutRetreat = cut - (distance - fitCameraDistance) * CUT_ZOOM_SENSITIVITY;
+  updateDistanceFade();
+}
+
+// The model under a point on the screen: its cell in the grid's plane, as
+// seen from the gallery's resting camera even while the camera is on its way.
+const galleryRaycaster = new THREE.Raycaster();
+const galleryPointer = new THREE.Vector2();
+const galleryPlane = new THREE.Plane();
+const galleryHit = new THREE.Vector3();
+const galleryCameraPosition = new THREE.Vector3();
+function galleryIndexAt(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  galleryPointer.set(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1
+  );
+  galleryCameraPosition.copy(camera.position);
+  setCameraDistance(galleryDistance);
+  camera.updateMatrixWorld();
+  galleryRaycaster.setFromCamera(galleryPointer, camera);
+  camera.position.copy(galleryCameraPosition);
+  camera.updateMatrixWorld();
+  cameraDirection.copy(camera.position).sub(controls.target).normalize();
+  galleryPlane.setFromNormalAndCoplanarPoint(cameraDirection, controls.target);
+  if (!galleryRaycaster.ray.intersectPlane(galleryPlane, galleryHit)) return -1;
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+  const offset = new THREE.Vector3();
+  return gallerySlots.findIndex((slot) => {
+    offset.copy(galleryHit).sub(slot);
+    return Math.abs(offset.dot(right)) < GALLERY_CELL * galleryRadius * 0.5 &&
+      Math.abs(offset.dot(up)) < GALLERY_ROW * galleryRadius * 0.5;
+  });
+}
+
+// An uncut copy of a model in its cell, sharing the prepared geometry. The
+// spinner follows the specimen's turn, so a drag spins the whole grid.
+function createGalleryItem(index) {
+  const model = galleryModels[index];
+  const opacity = { value: 0 };
+  const group = new THREE.Group();
+  const spinner = new THREE.Group();
+  group.add(spinner);
+  for (const part of model.parts) {
+    const material = Array.isArray(part.material)
+      ? part.material.map((item) => item.clone())
+      : part.material.clone();
+    for (const item of Array.isArray(material) ? material : [material]) {
+      item.vertexColors = part.hasVertexColors;
+      fadeWithDistance(item, opacity);
+    }
+    const mesh = new THREE.Mesh(part.geometry, material);
+    mesh.renderOrder = GALLERY_CLONE_ORDER;
+    spinner.add(mesh);
+  }
+  group.position.copy(gallerySlots[index]);
+  group.scale.setScalar(galleryRadius / model.radius);
+  galleryGroup.add(group);
+  galleryItems.set(index, { group, spinner, opacity });
+}
+
+function removeGalleryItem(index) {
+  const item = galleryItems.get(index);
+  if (!item) return;
+  galleryItems.delete(index);
+  galleryGroup.remove(item.group);
+  item.group.traverse((object) => {
+    if (!object.material) return;
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      material.dispose();
+    }
+  });
+}
+
+// to is read every frame, so a resize mid-way lands where the grid now is.
+function galleryTransition(from, to) {
+  galleryTween = tween(GALLERY_DURATION, easeInOutCubic, (progress) => {
+    applyGalleryState(from, to(), progress);
+  });
+  return galleryTween;
+}
+
+async function openGallery() {
+  if (galleryActive || galleryTween || modelLoading || currentModelIndex < 0) return;
+  endIntro();
+  modelLoading = true;
+  setModelNavigationDisabled(true);
+  let models;
+  try {
+    const requests = MODELS.map((_, index) => fetchModel(index));
+    if (!requests.every((request) => request.ready)) setLoading(true);
+    models = await Promise.all(requests);
+  } catch (error) {
+    for (const [index, request] of modelRequests) {
+      if (!request.ready) modelRequests.delete(index);
+    }
+    console.error("Could not load every model:", error);
+    setStatus(`Could not load every model: ${error.message}`, true);
+  } finally {
+    setLoading(false);
+    modelLoading = false;
+    setModelNavigationDisabled(false);
+  }
+  if (!models) return;
+  galleryModels = models;
+  galleryRadius = Math.max(...models.map((model) => model.radius));
+  galleryReturn = { index: currentModelIndex, distance: cameraDistance(), pitch: specimenPitch };
+  galleryActive = true;
+  galleryDepthClear.visible = true;
+  viewer.dataset.gallery = "true";
+  galleryToggleButton.setAttribute("aria-pressed", "true");
+  controls.enableZoom = false;
+  limitZoomToModel();
+  layoutGallery();
+  for (let index = 0; index < MODELS.length; index++) {
+    if (index !== currentModelIndex) createGalleryItem(index);
+  }
+  await galleryTransition(singleView(galleryReturn.distance, galleryReturn.pitch), galleryView);
+  galleryTween = null;
+  if (pendingGalleryIndex >= 0) {
+    const index = pendingGalleryIndex;
+    pendingGalleryIndex = -1;
+    selectFromGallery(index);
+  }
+}
+
+// Back to the single view of the current model, the cut sweeping in: the view
+// left on entering if it is the same model, otherwise cut through the middle
+// and seen from the side.
+async function closeGallery() {
+  if (!galleryActive || galleryTween) return;
+  pendingGalleryIndex = -1;
+  viewer.dataset.gallery = "false";
+  const to = galleryReturn.index === currentModelIndex
+    ? singleView(galleryReturn.distance, galleryReturn.pitch)
+    : singleView(fitCameraDistance, 0);
+  await galleryTransition(galleryView(), () => to);
+  galleryTween = null;
+  cutRetreat = 0;
+  galleryActive = false;
+  galleryDepthClear.visible = false;
+  galleryToggleButton.setAttribute("aria-pressed", "false");
+  for (const index of [...galleryItems.keys()]) removeGalleryItem(index);
+  galleryBlend = 0;
+  galleryOffset.set(0, 0, 0);
+  galleryScale = 1;
+  canvas.style.cursor = "";
+  controls.enableZoom = true;
+  limitZoomToModel();
+  updateDistanceFade();
+}
+
+// Picks a model from the grid. Its clone is swapped for the real thing in the
+// same cell (and the old model for a clone), which the zoom then closes in on.
+async function selectFromGallery(index, historyMode = "push") {
+  if (!galleryActive || galleryTween || modelLoading) return;
+  if (index !== currentModelIndex) {
+    const previous = currentModelIndex;
+    const yaw = specimenYaw;
+    removeGalleryItem(index);
+    currentModelIndex = index;
+    loadModel(galleryModels[index], MODELS[index].id);
+    specimenYaw = yaw;
+    createGalleryItem(previous);
+    applyGalleryState(galleryView(), galleryView(), 1);
+    showModelIdentity(index);
+    stoneTweaks?.show(MODELS[index], capEntries);
+    rememberModelInUrl(index, historyMode);
+  }
+  await closeGallery();
+}
+
 async function changeModel(index, historyMode = "push", direction = 0) {
+  if (galleryActive) return selectFromGallery(index, historyMode);
   if (modelLoading || index < 0 || index >= MODELS.length) return;
   modelLoading = true;
   setModelNavigationDisabled(true);
@@ -1061,12 +1424,12 @@ nextModelButton.addEventListener("click", () => {
   const index = (currentModelIndex + 1) % MODELS.length;
   changeModel(index, "push", 1);
 });
-let diceTurns = 0;
-randomModelButton.addEventListener("click", () => {
-  diceTurns += 1;
-  randomModelButton.style.setProperty("--dice-turn", `${diceTurns * 90}deg`);
-  const offset = Math.floor(Math.random() * (MODELS.length - 1)) + 1;
-  changeModel((currentModelIndex + offset) % MODELS.length);
+galleryToggleButton.addEventListener("click", () => {
+  if (galleryActive) {
+    closeGallery();
+  } else {
+    openGallery();
+  }
 });
 
 function closeAboutOverlay() {
@@ -1084,7 +1447,12 @@ aboutOverlay.addEventListener("click", () => {
   aboutToggleButton.focus();
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !aboutOverlay.hidden) closeAboutOverlay();
+  if (event.key !== "Escape") return;
+  if (!aboutOverlay.hidden) {
+    closeAboutOverlay();
+  } else if (galleryActive) {
+    closeGallery();
+  }
 });
 
 window.addEventListener("resize", resize);

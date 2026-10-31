@@ -48,7 +48,7 @@ canvas {
 
 .footer {
   position: absolute;
-  z-index: 1;
+  z-index: 4;
   top: max(16px, env(safe-area-inset-top));
   right: max(24px, env(safe-area-inset-right));
   display: flex;
@@ -117,7 +117,14 @@ canvas {
   transform: translateX(-50%);
 }
 
-/* Prev and Next sit in equal side columns so the dice stays exactly centred
+/* Gone at once while the about overlay is up (All fades its own parts). */
+.viewer[data-help="true"] .model-navigation {
+  opacity: 0;
+  pointer-events: none;
+}
+
+
+/* Prev and Next sit in equal side columns so All stays exactly centred
    regardless of label width. */
 .model-navigation-buttons {
   display: grid;
@@ -176,21 +183,27 @@ button:hover { opacity: 0.65; }
   fill: currentColor;
 }
 
-/* The dice turns another 90° on each press, settling with a springy bounce.
-   The cubic-bezier is the fallback for browsers without linear() easing. */
-#random-model .icon {
-  transform: rotate(var(--dice-turn, 0deg));
-  transition: transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transition-timing-function: linear(
-    0, 0.274, 0.577, 0.845, 1.042, 1.159, 1.205, 1.197, 1.156, 1.103, 1.051, 1.008,
-    0.98, 0.966, 0.963, 0.968, 0.977, 0.986, 0.995, 1.001, 1.005, 1.007, 1.006, 1.005, 1
-  );
-}
-
 @media (prefers-reduced-motion: reduce) {
-  body, button, #random-model .icon { transition: none; }
+  body, button { transition: none; }
 }
 button[aria-pressed="true"] { font-weight: 800; }
+/* Not All: bold would widen it and shift the row. */
+#gallery-toggle[aria-pressed="true"] { font-weight: inherit; }
+
+/* In the gallery only All stays; the name and Prev/Next fade away as the
+   gallery transition starts. */
+.model-navigation .model-name,
+.model-navigation #previous-model,
+.model-navigation #next-model {
+  transition: opacity 0.5s ease, visibility 0.5s, color 0.6s ease;
+}
+
+.viewer[data-gallery="true"] .model-name,
+.viewer[data-gallery="true"] #previous-model,
+.viewer[data-gallery="true"] #next-model {
+  opacity: 0;
+  visibility: hidden;
+}
 
 /* Play/pause shows the action a press will take. */
 #motion[data-playing="true"] .icon-play,
@@ -264,7 +277,7 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
     padding-left: 12px;
   }
 
-  .about-content { line-height: 1.25; }
+  .about-content { line-height: 1.35; }
   .about-content img { max-height: 12dvh; }
   .about-content p { margin-bottom: 0.35em; }
 
