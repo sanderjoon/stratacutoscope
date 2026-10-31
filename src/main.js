@@ -376,7 +376,7 @@ let modelRadius = 0;
 // Intro: how far the haze is pulled in toward the cut plane (1 = right up to it).
 let introHaze = 0;
 let introTween = null;
-// Model switch: the specimen's screen-vertical offset (positive = up).
+// Model switch: the specimen's sideways offset on screen (positive = right).
 let slideOffset = 0;
 let slideTween = null;
 const slideAxis = new THREE.Vector3();
@@ -651,12 +651,12 @@ function tween(duration, easing, update) {
   return promise;
 }
 
-// Vertical travel of the switch transition: a short drift, with the fade
+// Sideways travel of the switch transition: a short drift, with the fade
 // doing most of the work, so the change feels quick.
 function slideDistance() {
-  const halfHeight = camera.position.distanceTo(controls.target) *
-    Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-  return halfHeight * SLIDE_TRAVEL;
+  const halfWidth = camera.position.distanceTo(controls.target) *
+    Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)) * camera.aspect;
+  return halfWidth * SLIDE_TRAVEL;
 }
 
 function slideTo(targetOffset, targetOpacity, duration, easing) {
@@ -670,8 +670,9 @@ function slideTo(targetOffset, targetOpacity, duration, easing) {
   return slideTween;
 }
 
-// +1 when the new model comes after the current one (it enters from above),
-// -1 when it comes before. Picked by the shorter way round the list.
+// +1 when the new model comes after the current one (it enters from the
+// right, as Next points), -1 when it comes before. Picked by the shorter way
+// round the list.
 function switchDirection(index) {
   const forward = (index - currentModelIndex + MODELS.length) % MODELS.length;
   return forward <= MODELS.length / 2 ? 1 : -1;
@@ -1511,8 +1512,10 @@ function animate() {
   for (const entry of [...activeTweens]) entry.step(now);
   controls.update();
   updateCutPlane();
-  slideAxis.set(0, 1, 0).applyQuaternion(camera.quaternion);
-  specimen.position.copy(slideAxis).multiplyScalar(slideOffset);
+  slideAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  specimen.position.copy(slideAxis).multiplyScalar(slideOffset).add(galleryOffset);
+  specimen.scale.setScalar(galleryScale);
+  for (const item of galleryItems.values()) item.spinner.quaternion.copy(specimen.quaternion);
   composer.render();
 }
 resize();
