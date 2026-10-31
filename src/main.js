@@ -8,7 +8,7 @@ import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
-import { stoneSettings } from "./stone-presets.js";
+import { STONE_DEFAULTS, stoneSettings } from "./stone-presets.js";
 import { createScratch } from "./scratch.js";
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
@@ -55,8 +55,9 @@ const CHIP_RADIUS = [0.05, 0.28]; // of the cell size, skewed toward small
 // proportion to their radius: this much at the reference radius.
 const CHIP_ARC_STRETCH = 3;
 const CHIP_ARC_REFERENCE = 0.5; // of the model's radius
-const CHIP_COLORS = ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"];
-// The rest of the stone's look is set per model and cut-face colour in stone-presets.js.
+// The chips' colours and the rest of the stone's look are set per model and
+// cut-face colour in stone-presets.js.
+const CHIP_COLOR_COUNT = STONE_DEFAULTS.chipColors.length;
 const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
 const soundButton = document.querySelector("#sound");
@@ -178,8 +179,7 @@ function fadeWithDistance(material, opacity = modelOpacity) {
 const chipUniforms = {
   capToModel: { value: new THREE.Matrix4() },
   chipCell: { value: 1 },
-  chipTurn: { value: 16 }, // angular cells in a full turn at the base scale
-  chipColors: { value: CHIP_COLORS.map((hex) => new THREE.Color(hex)) }
+  chipTurn: { value: 16 } // angular cells in a full turn at the base scale
 };
 // Fine chips first so the coarse ones land on top. Each layer's angular cell
 // count is rounded so the grid still wraps cleanly around the axis.
@@ -191,6 +191,7 @@ const chipLayersGlsl = [...CHIP_LAYERS].reverse().map((layer, index) => `
         stone = mix(stone, chip.rgb, chip.a);`).join("");
 function speckleCap(material) {
   const stoneUniforms = {
+    chipColors: { value: Array.from({ length: CHIP_COLOR_COUNT }, () => new THREE.Color()) },
     chipDensity: { value: 1 },
     chipEmbed: { value: 0 },
     veinScale: { value: 1 },
@@ -216,7 +217,7 @@ function speckleCap(material) {
         uniform mat4 capToModel;
         uniform float chipCell;
         uniform float chipTurn;
-        uniform vec3 chipColors[${CHIP_COLORS.length}];
+        uniform vec3 chipColors[${CHIP_COLOR_COUNT}];
         uniform float chipDensity;
         uniform float chipEmbed;
         uniform float veinScale;
@@ -292,7 +293,7 @@ function speckleCap(material) {
             float width = length(footprint / extent);
             float coverage = 1.0 - smoothstep(1.0 - width, 1.0 + width, distance);
             if (coverage > result.a) {
-              vec3 colour = chipColors[int(seed.z * ${CHIP_COLORS.length}.0)] * (0.8 + tone.z * 0.4);
+              vec3 colour = chipColors[int(seed.z * ${CHIP_COLOR_COUNT}.0)] * (0.8 + tone.z * 0.4);
               colour = mix(colour, resin, tone.x * chipEmbed);
               result = vec4(colour, coverage);
             }
@@ -834,6 +835,7 @@ function applyStoneSettings(material, settings) {
   material.roughness = settings.roughness;
   material.metalness = settings.metalness;
   const uniforms = material.userData.stoneUniforms;
+  settings.chipColors.forEach((hex, index) => uniforms.chipColors.value[index].set(hex));
   uniforms.chipDensity.value = settings.chipDensity;
   uniforms.chipEmbed.value = settings.chipEmbed;
   uniforms.veinScale.value = settings.veinScale;

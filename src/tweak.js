@@ -25,6 +25,7 @@ function presetEntry(entries) {
   const result = {};
   for (const { hex, settings, base } of entries) {
     const changes = {};
+    if (settings.chipColors.join() !== base.chipColors.join()) changes.chipColors = [...settings.chipColors];
     for (const key of Object.keys(RANGES)) {
       if (round(settings[key]) !== round(base[key])) changes[key] = round(settings[key]);
     }
@@ -36,7 +37,7 @@ function presetEntry(entries) {
 function buildPrompt(model, entries) {
   const json = JSON.stringify(presetEntry(entries), null, 2);
   return [
-    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness. Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
+    `In src/stone-presets.js, replace the \`${model.id}\` entry of STONE_PRESETS with the JSON below (add the entry if it is missing). It holds the cut-face stone settings for the "${model.name}" model, keyed by cut-face colour as sRGB hex; a colour's settings override STONE_DEFAULTS and the model's own roughness/metalness (chipColors lists the chips' four tones as sRGB hex). Only values that differ from those fallbacks are listed, so write exactly these keys and no others. If the JSON is empty, remove the entry instead. Leave the other models' entries and the rest of the file unchanged, and match the file's formatting.`,
     "",
     "```json",
     json,
@@ -73,11 +74,14 @@ export function createStoneTweaks(onChange) {
 
   // Back to what the colour would get without a preset entry.
   function reset(entry) {
-    Object.assign(entry.settings, entry.base);
+    Object.assign(entry.settings, structuredClone(entry.base));
     onChange(entry);
   }
 
+  let shown = null;
+
   function show(model, entries) {
+    shown = { model, entries };
     for (const item of [...folders, ...actions]) item.dispose();
     folders = [];
     actions = [];
@@ -89,13 +93,21 @@ export function createStoneTweaks(onChange) {
       swatch.className = "tweak-swatch";
       swatch.style.background = entry.hex;
       folder.element.querySelector(".tp-fldv_b")?.prepend(swatch);
+      // The chip colours are bound through a copy, one key per chip.
+      const chips = Object.fromEntries(entry.settings.chipColors.map((hex, index) => [`chip ${index + 1}`, hex]));
+      Object.keys(chips).forEach((key, index) => {
+        folder.addBinding(chips, key, { view: "color" }).on("change", ({ value }) => {
+          entry.settings.chipColors[index] = value;
+          onChange(entry);
+        });
+      });
       for (const [key, range] of Object.entries(RANGES)) {
         folder.addBinding(entry.settings, key, { ...range, step: 0.001 })
           .on("change", () => onChange(entry));
       }
       folder.addButton({ title: "Reset this colour" }).on("click", () => {
         reset(entry);
-        folder.refresh();
+        show(shown.model, shown.entries);
       });
       folders.push(folder);
     }
@@ -107,7 +119,7 @@ export function createStoneTweaks(onChange) {
     const resetButton = pane.addButton({ title: "Reset all colours" });
     resetButton.on("click", () => {
       entries.forEach(reset);
-      pane.refresh();
+      show(shown.model, shown.entries);
     });
     actions.push(copyButton, resetButton);
   }
