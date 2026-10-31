@@ -822,6 +822,12 @@ const finishPointer = (event) => {
 };
 canvas.addEventListener("pointerup", finishPointer);
 canvas.addEventListener("pointercancel", finishPointer);
+canvas.addEventListener("lostpointercapture", finishPointer);
+// Leaving the window mid-drag can swallow the release too.
+window.addEventListener("blur", () => {
+  activePointers.clear();
+  angularVelocity.set(motorVelocity(), 0);
+});
 
 const capGroup = new THREE.Group();
 scene.add(capGroup);
