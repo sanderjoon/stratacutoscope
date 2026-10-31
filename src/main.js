@@ -245,32 +245,35 @@ function speckleCap(material) {
                    dot(p, vec3(113.5, 271.9, 124.6)));
           return fract(sin(p) * 43758.5453123);
         }
-        float noise(vec3 p) {
+        // Value noise on a lattice that wraps along y every period cells, so
+        // a pattern laid around the axis joins up: a turn of the model slides
+        // it through the cut instead of reshaping it. For a pattern that need
+        // not wrap, pass a period far beyond its extent.
+        float noise(vec3 p, float period) {
           vec3 i = floor(p);
           vec3 f = fract(p);
           f = f * f * (3.0 - 2.0 * f);
+          float y0 = mod(i.y, period);
+          float y1 = mod(i.y + 1.0, period);
           return mix(
-            mix(mix(hash3(i).x, hash3(i + vec3(1, 0, 0)).x, f.x),
-                mix(hash3(i + vec3(0, 1, 0)).x, hash3(i + vec3(1, 1, 0)).x, f.x), f.y),
-            mix(mix(hash3(i + vec3(0, 0, 1)).x, hash3(i + vec3(1, 0, 1)).x, f.x),
-                mix(hash3(i + vec3(0, 1, 1)).x, hash3(i + vec3(1, 1, 1)).x, f.x), f.y),
+            mix(mix(hash3(vec3(i.x, y0, i.z)).x, hash3(vec3(i.x + 1.0, y0, i.z)).x, f.x),
+                mix(hash3(vec3(i.x, y1, i.z)).x, hash3(vec3(i.x + 1.0, y1, i.z)).x, f.x), f.y),
+            mix(mix(hash3(vec3(i.x, y0, i.z + 1.0)).x, hash3(vec3(i.x + 1.0, y0, i.z + 1.0)).x, f.x),
+                mix(hash3(vec3(i.x, y1, i.z + 1.0)).x, hash3(vec3(i.x + 1.0, y1, i.z + 1.0)).x, f.x), f.y),
             f.z) * 2.0 - 1.0;
         }
-        float fbm(vec3 p) {
+        // Each octave doubles the frequency exactly, so the period stays a
+        // whole number of cells and keeps wrapping.
+        float fbm(vec3 p, float period, int octaves) {
           float sum = 0.0;
           float amplitude = 0.5;
-          for (int i = 0; i < 4; i++) {
-            sum += amplitude * noise(p);
-            p = p * 2.03 + 11.1;
+          for (int i = 0; i < octaves; i++) {
+            sum += amplitude * noise(p, period);
+            p = p * 2.0 + 11.1;
+            period *= 2.0;
             amplitude *= 0.5;
           }
           return sum;
-        }
-        // Noise in cylindrical coordinates (radius, arc, height) that joins up
-        // around the axis: a turn of the model slides a pattern through the
-        // cut instead of reshaping it. The arc runs from 0 to period per turn.
-        float roundNoise(vec3 c, float period) {
-          return mix(fbm(c), fbm(c - vec3(0.0, period, 0.0)), c.y / period);
         }
         // u is cylindrical, in cells: (radius, angle, height), with the angle
         // wrapping every turn cells. rgb: chip colour, a: coverage
@@ -328,7 +331,8 @@ function speckleCap(material) {
         vec3 stonePoint = (capToModel * vec4(vCapWorld, 1.0)).xyz / chipCell;
         float pixel = length(fwidth(stonePoint)) * 0.7;
         // Resin: the cap's colour, mottled, with thin veins where a noise field crosses zero.
-        vec3 resin = diffuseColor.rgb * (1.0 + cloudStrength * fbm(stonePoint * veinScale * 0.5 + 5.3));
+        vec3 resin = diffuseColor.rgb;
+        if (cloudStrength > 0.0) resin *= 1.0 + cloudStrength * fbm(stonePoint * veinScale * 0.5 + 5.3, 1e5, 3);
         float stoneRadius = length(stonePoint.xz);
         float stoneTurns = atan(stonePoint.z, stonePoint.x) / 6.2831853 + 0.5;
         // Veins: bands through the model, stacked along the axis and tilted
@@ -339,27 +343,36 @@ function speckleCap(material) {
         // layers only the bending is left and the bands become its contours,
         // wandering like marble. Each band's period holds one vein of
         // veinWidth, with edges as hard as veinContrast asks.
-        float arcPeriod = chipTurn * veinScale;
-        vec3 veinPoint = vec3(stoneRadius * veinScale, stoneTurns * arcPeriod, stonePoint.y * veinScale);
-        vec3 warped = veinPoint + 0.9 * vec3(
-          roundNoise(veinPoint + vec3(3.1, 0.0, 15.9), arcPeriod),
-          0.0,
-          roundNoise(veinPoint + vec3(9.7, 0.0, 27.3), arcPeriod));
-        float wander = roundNoise(warped, arcPeriod);
-        float band = (stonePoint.y * cos(veinAngle) + stoneRadius * sin(veinAngle)) * veinLayers
-          + veinWave * wander
-          + veinRipple * sin(stoneRadius * veinRippleScale * 6.2831853)
-          + 0.5; // so an unbent band's vein sits where the noise crosses zero
-        float offCentre = abs(fract(band) - 0.5);
-        float halfWidth = veinWidth * 0.5;
-        // The edge softens in proportion to the width, so a thin vein still
-        // reaches its full colour at its centre.
-        float edge = halfWidth * mix(1.0, 0.03, veinContrast);
-        float vein = 1.0 - smoothstep(halfWidth - edge, halfWidth + edge, offCentre);
-        resin = mix(resin, veinColor, vein * veinStrength);
+        if (veinStrength > 0.0 && veinWidth > 0.0) {
+          // A whole number of noise cells per turn, so the noise wraps.
+          float arcPeriod = max(1.0, floor(chipTurn * veinScale + 0.5));
+          vec3 veinPoint = vec3(stoneRadius * veinScale, stoneTurns * arcPeriod, stonePoint.y * veinScale);
+          float wander = 0.0;
+          if (veinWave > 0.0) {
+            // The warp only needs the broad strokes; the detail is in the field itself.
+            vec3 warped = veinPoint + 0.9 * vec3(
+              fbm(veinPoint + vec3(3.1, 0.0, 15.9), arcPeriod, 2),
+              0.0,
+              fbm(veinPoint + vec3(9.7, 0.0, 27.3), arcPeriod, 2));
+            wander = fbm(warped, arcPeriod, 4);
+          }
+          float band = (stonePoint.y * cos(veinAngle) + stoneRadius * sin(veinAngle)) * veinLayers
+            + veinWave * wander
+            + veinRipple * sin(stoneRadius * veinRippleScale * 6.2831853)
+            + 0.5; // so an unbent band's vein sits where the noise crosses zero
+          float offCentre = abs(fract(band) - 0.5);
+          float halfWidth = veinWidth * 0.5;
+          // The edge softens in proportion to the width, so a thin vein still
+          // reaches its full colour at its centre.
+          float edge = halfWidth * mix(1.0, 0.03, veinContrast);
+          float vein = 1.0 - smoothstep(halfWidth - edge, halfWidth + edge, offCentre);
+          resin = mix(resin, veinColor, vein * veinStrength);
+        }
         vec3 stone = resin;
-        vec4 chip;
-        float turn;${chipLayersGlsl}
+        if (chipDensity > 0.0) {
+          vec4 chip;
+          float turn;${chipLayersGlsl}
+        }
         diffuseColor.rgb = stone;`)
       .replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
         totalEmissiveRadiance = stone * capEmissive;`);
