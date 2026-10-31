@@ -107,7 +107,9 @@ const renderer = new THREE.WebGLRenderer({
   alpha: true,
   stencil: true
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+// Phones have the densest screens and the weakest GPUs: 1.5x is still sharp
+// there and costs 44% fewer pixels than 2x.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
