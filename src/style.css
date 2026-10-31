@@ -408,7 +408,10 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
   color: var(--ink);
   opacity: 0.85;
-  pointer-events: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Stone tuning pane (?tweak), kept clear of the actions at the top right. */

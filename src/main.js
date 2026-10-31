@@ -1615,19 +1615,51 @@ changeModel(modelIndexFromUrl(), "replace").then(() => {
 });
 
 // Frame timing readout (?stats): the interval between frames, which a slow
-// GPU stretches, and the time the frame's own code takes, refreshed twice a second.
+// GPU stretches, and the time the frame's own code takes, refreshed twice a
+// second. A tap copies the readout with the device's details.
 const stats = DIAGNOSTICS.stats ? createStats() : null;
 function createStats() {
   const element = document.createElement("pre");
   element.className = "stats";
+  element.setAttribute("role", "button");
+  element.tabIndex = 0;
+  element.title = "Tap to copy";
   viewer.append(element);
   const frames = [];
   const scripts = [];
   let shownAt = performance.now();
+  let readout = "";
+  let notice = "";
+  let noticeUntil = 0;
   const flags = Object.entries(DIAGNOSTICS)
     .filter(([, value]) => value)
     .map(([key, value]) => (value === true ? key : `${key}=${value}`))
     .join(" ") || "none";
+  const gl = renderer.getContext();
+  const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+  const gpu = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : "unknown GPU";
+  const device = () => [
+    `gpu: ${gpu}`,
+    `screen: ${screen.width}×${screen.height} @${window.devicePixelRatio}`,
+    `model: ${MODELS[currentModelIndex]?.id ?? "none"}`,
+    navigator.userAgent
+  ].join("\n");
+  function show() {
+    element.textContent = notice && performance.now() < noticeUntil ? `${readout}\n${notice}` : readout;
+  }
+  function say(text) {
+    notice = text;
+    noticeUntil = performance.now() + 1500;
+    show();
+  }
+  element.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(`${readout}\n${device()}`);
+      say("copied");
+    } catch {
+      say("copy failed");
+    }
+  });
   return {
     add(frame, script) {
       frames.push(frame);
@@ -1637,13 +1669,14 @@ function createStats() {
       shownAt = now;
       const mean = (list) => list.reduce((sum, value) => sum + value, 0) / list.length;
       const worst = Math.max(...frames);
-      element.textContent = [
+      readout = [
         `${(1000 / mean(frames)).toFixed(0)} fps`,
         `frame ${mean(frames).toFixed(1)} ms, worst ${worst.toFixed(1)}`,
         `script ${mean(scripts).toFixed(1)} ms`,
         `${canvas.width}×${canvas.height} @${renderer.getPixelRatio()}`,
         `flags: ${flags}`
       ].join("\n");
+      show();
       frames.length = 0;
       scripts.length = 0;
     }
