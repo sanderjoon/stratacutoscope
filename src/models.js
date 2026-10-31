@@ -30,6 +30,12 @@ export const MODELS = [
     id: "bouncingballs",
     url: "./assets/models/bouncing-balls.glb",
     backgroundColor: "#000000"
+  },
+  {
+    name: "Football",
+    id: "football",
+    url: "./assets/models/football.glb",
+    backgroundColor: "#0d9d36"
   }
 ];
 
