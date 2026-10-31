@@ -393,8 +393,8 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
   .model-navigation-buttons > button,
   .model-name {
-    padding-right: 5px;
-    padding-left: 5px;
+    padding-right: 8px;
+    padding-left: 8px;
     letter-spacing: 0.04em;
   }
 }
