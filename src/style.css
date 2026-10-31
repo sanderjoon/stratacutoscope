@@ -173,7 +173,7 @@ body {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
 }
 
 .model-navigation-buttons > button:first-child { justify-self: end; }
@@ -388,7 +388,8 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
   .model-navigation { bottom: max(14px, env(safe-area-inset-bottom)); }
 
-  .model-navigation-buttons { gap: 0; }
+  /* Room between the three, so a thumb lands on All and not on its neighbours. */
+  .model-navigation-buttons { gap: 12px; }
 
   .model-navigation-buttons > button,
   .model-name {
