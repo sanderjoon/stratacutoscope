@@ -744,9 +744,11 @@ function updateCutPlane() {
   const cutDistance = -zoomInDistance * CUT_ZOOM_SENSITIVITY + cutRetreat;
   cutPoint.copy(controls.target).addScaledVector(cameraDirection, cutDistance);
   cutPlane.setFromNormalAndCoplanarPoint(cameraDirection.clone().negate(), cutPoint);
-  capGroup.position.copy(cutPoint);
+  // The caps' quad: just big enough to cover the model's cross-section, so the
+  // stone shader runs over no more of the screen than the model fills.
+  cutPlane.projectPoint(specimen.position, capGroup.position);
   capGroup.quaternion.setFromUnitVectors(planeNormal, cameraDirection);
-  capGroup.scale.setScalar(fitDistance * 4);
+  capGroup.scale.setScalar(modelRadius * specimen.scale.x * 2.1 || fitDistance * 4);
   capFillLight.position.copy(camera.position);
   capFillLight.target.position.copy(controls.target);
 }
@@ -1705,10 +1707,10 @@ function animate() {
   for (const entry of [...activeTweens]) entry.step(now);
   if (soundOn) scratch.setSpeed(playbackSpeed(delta));
   controls.update();
-  updateCutPlane();
   slideAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
   specimen.position.copy(slideAxis).multiplyScalar(slideOffset).add(galleryOffset);
   specimen.scale.setScalar(galleryScale);
+  updateCutPlane();
   for (const item of galleryItems.values()) item.spinner.quaternion.copy(specimen.quaternion);
   composer.render();
   stats?.add(frameInterval, performance.now() - now);
