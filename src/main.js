@@ -282,10 +282,14 @@ function speckleCap(material) {
           vec4 result = vec4(0.0);
           // One pixel spans more angular cells the closer it is to the axis.
           vec3 footprint = vec3(pixel, pixel * turn / max(u.x * 6.2831853, 1e-3), pixel);
-          for (int x = -1; x <= 1; x++)
-          for (int y = -1; y <= 1; y++)
-          for (int z = -1; z <= 1; z++) {
-            vec3 neighbour = cell + vec3(x, y, z);
+          // A chip reaches at most 0.6 cells from its cell's centre, so only
+          // the nearer neighbour on each axis can cover this point: 8 cells
+          // to test, not 27.
+          vec3 side = sign(u - cell - 0.5);
+          for (int x = 0; x <= 1; x++)
+          for (int y = 0; y <= 1; y++)
+          for (int z = 0; z <= 1; z++) {
+            vec3 neighbour = cell + side * vec3(x, y, z);
             vec3 key = vec3(neighbour.x, mod(neighbour.y, turn), neighbour.z);
             vec3 seed = hash3(key);
             if (seed.x > density * chipDensity) continue;
