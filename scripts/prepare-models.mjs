@@ -2,6 +2,7 @@
 // public/assets/models/, doing once, here, what the page would otherwise do on
 // every load:
 //   - bakes node transforms into the vertices and centres the model on the origin
+//   - replaces the normals with smooth ones averaged across split vertices
 //   - keeps one colour layer per mesh as COLOR_0 and drops the rest (Blender
 //     exports its colour attributes by index; the real one is the highest
 //     layer that is not all zeros)
@@ -40,9 +41,8 @@ function chooseColourLayer(primitive) {
   return layers.find((semantic) => !isAllZero(primitive.getAttribute(semantic))) ?? null;
 }
 
-// Indices with every vertex replaced by the first one at the same position,
-// or null when no vertex repeats.
-function weldedIndices(primitive) {
+// For each vertex, the first vertex at the same position.
+function weldRemap(primitive) {
   const position = primitive.getAttribute("POSITION");
   const count = position.getCount();
   const firstAt = new Map();
@@ -54,6 +54,15 @@ function weldedIndices(primitive) {
     remap[i] = first ?? i;
     if (first === undefined) firstAt.set(key, i);
   }
+  return remap;
+}
+
+// Indices with every vertex replaced by the first one at the same position,
+// or null when no vertex repeats.
+function weldedIndices(primitive) {
+  const position = primitive.getAttribute("POSITION");
+  const count = position.getCount();
+  const remap = weldRemap(primitive);
   const source = primitive.getIndices()?.getArray() ?? Uint32Array.from({ length: count }, (_, i) => i);
   const welded = count > 0xffff ? new Uint32Array(source.length) : new Uint16Array(source.length);
   let changed = false;
@@ -62,6 +71,48 @@ function weldedIndices(primitive) {
     if (welded[i] !== source[i]) changed = true;
   }
   return changed ? welded : null;
+}
+
+// Normals averaged over every face that meets at a position, so the surface
+// shades smoothly everywhere: no creases where Blender split the vertices.
+function smoothNormals(document, primitive) {
+  const position = primitive.getAttribute("POSITION");
+  const count = position.getCount();
+  const remap = weldRemap(primitive);
+  const indices = primitive.getIndices()?.getArray() ?? Uint32Array.from({ length: count }, (_, i) => i);
+  const points = position.getArray();
+  const sums = new Float64Array(count * 3);
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const a = indices[i] * 3;
+    const b = indices[i + 1] * 3;
+    const c = indices[i + 2] * 3;
+    const abx = points[b] - points[a], aby = points[b + 1] - points[a + 1], abz = points[b + 2] - points[a + 2];
+    const acx = points[c] - points[a], acy = points[c + 1] - points[a + 1], acz = points[c + 2] - points[a + 2];
+    // The cross product's length is twice the area: larger faces weigh more.
+    const nx = aby * acz - abz * acy;
+    const ny = abz * acx - abx * acz;
+    const nz = abx * acy - aby * acx;
+    for (const corner of [indices[i], indices[i + 1], indices[i + 2]]) {
+      const target = remap[corner] * 3;
+      sums[target] += nx;
+      sums[target + 1] += ny;
+      sums[target + 2] += nz;
+    }
+  }
+  const normals = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const source = remap[i] * 3;
+    const length = Math.hypot(sums[source], sums[source + 1], sums[source + 2]) || 1;
+    normals[i * 3] = sums[source] / length;
+    normals[i * 3 + 1] = sums[source + 1] / length;
+    normals[i * 3 + 2] = sums[source + 2] / length;
+  }
+  const previous = primitive.getAttribute("NORMAL");
+  primitive.setAttribute("NORMAL", document.createAccessor()
+    .setType("VEC3")
+    .setArray(normals)
+    .setBuffer(document.getRoot().listBuffers()[0]));
+  previous?.dispose();
 }
 
 function hullVertices(points, bounds) {
@@ -141,6 +192,8 @@ async function prepare(name) {
     for (let i = 0; i < position.getCount(); i += stride) {
       hullInput.push(new Vector3(...position.getElement(i, element)));
     }
+
+    smoothNormals(document, primitive);
 
     const welded = weldedIndices(primitive);
     if (welded) {
