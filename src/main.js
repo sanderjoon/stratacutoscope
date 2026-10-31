@@ -9,6 +9,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
 import { stoneSettings } from "./stone-presets.js";
+import { createScratch } from "./scratch.js";
 const CUT_ZOOM_SENSITIVITY = 1;
 const AO_RADIUS_RATIO = 0.08; // of the model's largest dimension
 const ZOOM_OUT_MARGIN = 1.15; // of the model's radius; lets the whole model sit inside the view
@@ -58,6 +59,7 @@ const CHIP_COLORS = ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"];
 // The rest of the stone's look is set per model and cut-face colour in stone-presets.js.
 const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
+const soundButton = document.querySelector("#sound");
 const gyroscopeButton = document.querySelector("#gyroscope");
 const aboutToggleButton = document.querySelector("#about-toggle");
 const aboutOverlay = document.querySelector("#about-overlay");
@@ -1399,6 +1401,72 @@ function toggleMotion() {
 
 motionButton.addEventListener("click", toggleMotion);
 
+// Turntable sound. The record plays at the specimen's spin: the motor speed
+// is normal playback, a drag scratches, pause lets it wind down.
+const SCRATCH_TRACK = "./assets/audio/moulinet.m4a";
+const SOUND_TIP_DURATION = 3000; // ms
+const soundTip = document.querySelector("#sound-tip");
+let scratch = null;
+let soundOn = false;
+let previousYaw = null;
+let soundTipTimer = null;
+
+// The track loads once the first model is up, without holding the page: the
+// speaker spins meanwhile, then settles as muted and points itself out.
+async function preloadSound() {
+  scratch ??= createScratch(SCRATCH_TRACK);
+  try {
+    await scratch.preload();
+  } catch (error) {
+    console.warn("Could not load the sound:", error);
+    soundButton.hidden = true;
+    return;
+  }
+  soundButton.dataset.loading = "false";
+  soundButton.removeAttribute("aria-busy");
+  soundButton.disabled = false;
+  soundTip.dataset.visible = "true";
+  soundTipTimer = setTimeout(hideSoundTip, SOUND_TIP_DURATION);
+}
+
+function hideSoundTip() {
+  clearTimeout(soundTipTimer);
+  soundTip.dataset.visible = "false";
+}
+soundButton.addEventListener("click", async () => {
+  hideSoundTip();
+  soundOn = !soundOn;
+  soundButton.dataset.sound = String(soundOn);
+  soundButton.setAttribute("aria-pressed", String(soundOn));
+  const label = soundOn ? "Turn sound off" : "Turn sound on";
+  soundButton.setAttribute("aria-label", label);
+  soundButton.title = label;
+  if (!soundOn) {
+    scratch?.stop();
+    return;
+  }
+  try {
+    scratch ??= createScratch(SCRATCH_TRACK);
+    await scratch.start();
+  } catch (error) {
+    console.error("Could not start the sound:", error);
+    setStatus(`Could not start the sound: ${error.message}`, true);
+    soundOn = false;
+    soundButton.dataset.sound = "false";
+    soundButton.setAttribute("aria-pressed", "false");
+  }
+});
+
+// The spin this frame, as a multiple of the motor speed; 0 across a model
+// change, where the yaw is reset.
+function playbackSpeed(delta) {
+  const yaw = specimenYaw;
+  const change = previousYaw === null ? 0 : yaw - previousYaw;
+  previousYaw = yaw;
+  if (!delta || Math.abs(change) > Math.PI) return 0;
+  return change / delta / AUTO_ROTATION_SPEED;
+}
+
 // Space toggles the turntable too, unless a focused control would already
 // react to it (a focused button clicks on Space, which would toggle twice).
 window.addEventListener("keydown", (event) => {
@@ -1489,7 +1557,10 @@ async function prefetchRemainingModels() {
   }
 }
 
-changeModel(modelIndexFromUrl(), "replace").then(prefetchRemainingModels);
+changeModel(modelIndexFromUrl(), "replace").then(() => {
+  preloadSound();
+  return prefetchRemainingModels();
+});
 
 function animate() {
   requestAnimationFrame(animate);
@@ -1510,6 +1581,7 @@ function animate() {
     }
   }
   for (const entry of [...activeTweens]) entry.step(now);
+  if (soundOn) scratch.setSpeed(playbackSpeed(delta));
   controls.update();
   updateCutPlane();
   slideAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);

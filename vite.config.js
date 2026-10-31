@@ -31,6 +31,9 @@ export default defineConfig({
   build: {
     // three.js alone is ~600 kB minified; one chunk is fine for a single-page viewer.
     chunkSizeWarningLimit: 1000,
+    // The audio worklet is loaded by URL and must stay a file: a data: URL
+    // is refused by AudioWorklet.addModule in some browsers.
+    assetsInlineLimit: (file) => (file.endsWith("scratch-worklet.js") ? false : undefined),
     rollupOptions: {
       input: {
         main: resolve(import.meta.dirname, "index.html"),

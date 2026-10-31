@@ -209,6 +209,77 @@ button[aria-pressed="true"] { font-weight: 800; }
 #motion[data-playing="true"] .icon-play,
 #motion[data-playing="false"] .icon-pause { display: none; }
 
+/* The speaker shows the current state; while the track loads, a spinner. */
+#sound[data-sound="true"] .icon-sound-off,
+#sound[data-sound="false"] .icon-sound-on,
+#sound[data-loading="true"] .icon-sound-off,
+#sound[data-loading="true"] .icon-sound-on,
+#sound[data-loading="false"] .icon-loading { display: none; }
+
+#sound[data-loading="true"] { opacity: 1; }
+.icon-loading { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .icon-loading { animation: none; } }
+
+/* Once the track is ready, a word under the speaker says there is sound: an
+   outlined bubble in the text colour that pops up and away in jerky steps. */
+.sound-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.sound-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 50%;
+  padding: 6px 10px;
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+  font-size: var(--nav-font-size);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transform: translateX(50%) scale(0);
+  transform-origin: 50% -8px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The arrow: a square turned 45°, its two leading sides outlined, its face in
+   the page colour so it covers the bubble's top edge where it joins. */
+.sound-tip::before {
+  content: "";
+  position: absolute;
+  top: -5.5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-top: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  background: var(--bg);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.sound-tip[data-visible="true"] {
+  visibility: visible;
+  animation: tip-in 0.35s steps(5, jump-end) forwards;
+}
+
+.sound-tip[data-visible="false"] {
+  visibility: visible;
+  animation: tip-out 0.3s steps(4, jump-end) forwards;
+}
+
+@keyframes tip-in {
+  from { transform: translateX(50%) scale(0); }
+  to { transform: translateX(50%) scale(1); }
+}
+
+@keyframes tip-out {
+  from { transform: translateX(50%) scale(1); visibility: visible; }
+  to { transform: translateX(50%) scale(0); visibility: hidden; }
+}
+
 button:disabled { cursor: wait; opacity: 0.55; }
 
 button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
