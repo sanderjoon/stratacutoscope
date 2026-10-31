@@ -123,10 +123,9 @@ const renderer = new THREE.WebGLRenderer({
   alpha: true,
   stencil: true
 });
-// Phones have the densest screens and the weakest GPUs: 1.5x is still sharp
-// there and costs 44% fewer pixels than 2x.
-renderer.setPixelRatio(DIAGNOSTICS.pixelRatio ??
-  Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
+// Phones have the densest screens (3x) and the weakest GPUs: 2x stays sharp
+// there and costs 56% fewer pixels than 3x.
+renderer.setPixelRatio(DIAGNOSTICS.pixelRatio ?? Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 // The cap mask: a cheap pass that runs the stencil logic first and records
 // which part's cap owns each pixel, so the stone shader can skip the rest.
