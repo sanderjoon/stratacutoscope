@@ -64,9 +64,7 @@ const gyroscopeButton = document.querySelector("#gyroscope");
 const viewer = document.querySelector(".viewer");
 const aboutToggleButton = document.querySelector("#about-toggle");
 const aboutOverlay = document.querySelector("#about-overlay");
-const modelPicker = document.querySelector(".model-picker");
-const modelPickerToggle = document.querySelector("#model-picker-toggle");
-const modelPickerMenu = document.querySelector("#model-picker-menu");
+const modelNameLabel = document.querySelector("#model-name");
 const previousModelButton = document.querySelector("#previous-model");
 const galleryToggleButton = document.querySelector("#gallery-toggle");
 const nextModelButton = document.querySelector("#next-model");
@@ -85,7 +83,7 @@ function applyBackgroundColor(hex) {
 // Background and name change together, as soon as a switch starts.
 function showModelIdentity(index) {
   applyBackgroundColor(MODELS[index].backgroundColor);
-  modelPickerToggle.textContent = MODELS[index].name;
+  modelNameLabel.textContent = MODELS[index].name;
 }
 const canvas = document.querySelector("#scene");
 const isTouchDevice = navigator.maxTouchPoints > 0 ||
@@ -460,59 +458,9 @@ function setLoading(loading) {
 }
 
 function setModelNavigationDisabled(disabled) {
-  modelPickerToggle.disabled = disabled;
   previousModelButton.disabled = disabled;
   galleryToggleButton.disabled = disabled;
   nextModelButton.disabled = disabled;
-  modelPickerMenu.querySelectorAll("button").forEach((button) => {
-    button.disabled = disabled;
-  });
-  if (disabled) closeModelPicker();
-}
-
-function closeModelPicker() {
-  modelPickerMenu.hidden = true;
-  modelPickerToggle.setAttribute("aria-expanded", "false");
-}
-
-MODELS.forEach((model, index) => {
-  const option = document.createElement("button");
-  option.type = "button";
-  option.textContent = model.name;
-  option.setAttribute("role", "menuitem");
-  option.addEventListener("click", () => {
-    closeModelPicker();
-    modelPickerToggle.focus();
-    changeModel(index);
-  });
-  modelPickerMenu.append(option);
-});
-
-modelPickerToggle.addEventListener("click", () => {
-  const isOpening = modelPickerMenu.hidden;
-  modelPickerMenu.hidden = !isOpening;
-  modelPickerToggle.setAttribute("aria-expanded", String(isOpening));
-});
-
-document.addEventListener("click", (event) => {
-  if (!modelPicker.contains(event.target)) closeModelPicker();
-});
-
-window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !modelPickerMenu.hidden) {
-    closeModelPicker();
-    modelPickerToggle.focus();
-  }
-});
-
-function updateModelPickerSelection() {
-  modelPickerMenu.querySelectorAll("button").forEach((button, index) => {
-    if (index === currentModelIndex) {
-      button.setAttribute("aria-current", "true");
-    } else {
-      button.removeAttribute("aria-current");
-    }
-  });
 }
 
 // Geometry is left alone: it belongs to the prepared model, kept for the next visit.
@@ -1374,12 +1322,7 @@ async function changeModel(index, historyMode = "push", direction = 0) {
       modelOpacity.value = 0;
       slideTo(0, 1, SLIDE_IN_DURATION, easeOutCubic);
     }
-    updateModelPickerSelection();
-    if (historyMode) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("model", MODELS[index].id);
-      window.history[`${historyMode}State`]({}, "", url);
-    }
+    rememberModelInUrl(index, historyMode);
   } catch (error) {
     console.error("Could not display the model:", error);
     setStatus(`Could not display the model: ${error.message}`, true);
