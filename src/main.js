@@ -6,6 +6,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
@@ -90,6 +91,18 @@ function showModelIdentity(index) {
 const canvas = document.querySelector("#scene");
 const isTouchDevice = navigator.maxTouchPoints > 0 ||
   window.matchMedia("(pointer: coarse)").matches;
+// Switches for timing what costs what on a slow device, each a query key:
+//   ?plaincap  flat cut faces, without the stone shader
+//   ?noao      no ambient occlusion pass
+//   ?noaa      no anti-aliasing pass
+//   ?dpr=1     render at this pixel ratio instead of the screen's
+const query = new URLSearchParams(window.location.search);
+const DIAGNOSTICS = {
+  plainCap: query.has("plaincap"),
+  noAO: query.has("noao"),
+  noAA: query.has("noaa"),
+  pixelRatio: Number(query.get("dpr")) || null
+};
 // The gyroscope is hidden for now: its rotation misbehaves and wants another look.
 gyroscopeButton.hidden = true;
 
@@ -110,7 +123,8 @@ const renderer = new THREE.WebGLRenderer({
 });
 // Phones have the densest screens and the weakest GPUs: 1.5x is still sharp
 // there and costs 44% fewer pixels than 2x.
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
+renderer.setPixelRatio(DIAGNOSTICS.pixelRatio ??
+  Math.min(window.devicePixelRatio || 1, isTouchDevice ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
@@ -127,7 +141,11 @@ pmremGenerator.dispose();
 // then SMAA (hardware MSAA does not apply once rendering goes through targets).
 // N8AO derives normals from depth, so the clipped model and the stencil caps
 // are occluded exactly as drawn.
-const composer = new EffectComposer(renderer);
+// Without the occlusion pass a plain render pass draws the scene, into a
+// target with the stencil buffer the caps need (N8AO brings its own).
+const composer = new EffectComposer(renderer, DIAGNOSTICS.noAO
+  ? new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true })
+  : undefined);
 const aoPass = new N8AOPass(scene, camera, 1, 1);
 aoPass.configuration.stencil = true;
 aoPass.configuration.gammaCorrection = false;
@@ -140,7 +158,7 @@ if (isTouchDevice) {
   aoPass.configuration.denoiseSamples = 4;
   aoPass.configuration.denoiseRadius = 8;
 }
-composer.addPass(aoPass);
+composer.addPass(DIAGNOSTICS.noAO ? new RenderPass(scene, camera) : aoPass);
 // Fragments carry a distance-based alpha (see fadeWithDistance). The canvas is
 // composited premultiplied, so the output shader multiplies colour by alpha as
 // its last step, once tone mapping and the sRGB transfer are done.
@@ -151,7 +169,7 @@ composer.addPass(outputPass);
 // Anti-aliasing: SMAA's three passes on desktop; on phones the single, cheaper
 // FXAA pass, whose softness the dense screen hides.
 const fxaaPass = isTouchDevice ? new ShaderPass(FXAAShader) : null;
-composer.addPass(fxaaPass ?? new SMAAPass(1, 1));
+if (!DIAGNOSTICS.noAA) composer.addPass(fxaaPass ?? new SMAAPass(1, 1));
 
 // Distance haze in the page's background colour. Blending toward a fog colour
 // would be shifted by tone mapping, so instead the fragment's alpha falls off
@@ -883,6 +901,7 @@ let stoneTweaks = null;
 if (new URLSearchParams(window.location.search).has("tweak")) {
   import("./tweak.js").then(({ createStoneTweaks }) => {
     stoneTweaks = createStoneTweaks((entry) => {
+      if (DIAGNOSTICS.plainCap) return;
       for (const material of entry.materials) applyStoneSettings(material, entry.settings);
     });
     if (currentModelIndex >= 0) stoneTweaks.show(MODELS[currentModelIndex], capEntries);
@@ -912,7 +931,8 @@ function applyStoneSettings(material, settings) {
 }
 
 function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
-  const capMaterial = speckleCap(fadeWithDistance(meshMaterial.clone()));
+  const capMaterial = fadeWithDistance(meshMaterial.clone());
+  if (!DIAGNOSTICS.plainCap) speckleCap(capMaterial);
   capMaterial.clippingPlanes = [];
   capMaterial.vertexColors = false;
   capMaterial.color.multiply(vertexColor);
@@ -929,7 +949,12 @@ function createCap(meshMaterial, renderOrder, vertexColor, modelId) {
     capEntries.push(entry);
   }
   entry.materials.push(capMaterial);
-  applyStoneSettings(capMaterial, entry.settings);
+  if (DIAGNOSTICS.plainCap) {
+    // The flat stand-in keeps the stone's glow, so the cut still reads flat.
+    capMaterial.emissive.copy(capMaterial.color).multiplyScalar(entry.settings.emissive);
+  } else {
+    applyStoneSettings(capMaterial, entry.settings);
+  }
   capMaterial.stencilWrite = true;
   capMaterial.stencilRef = 0;
   capMaterial.stencilFunc = THREE.NotEqualStencilFunc;
