@@ -61,6 +61,7 @@ const status = document.querySelector("#status");
 const motionButton = document.querySelector("#motion");
 const soundButton = document.querySelector("#sound");
 const gyroscopeButton = document.querySelector("#gyroscope");
+const viewer = document.querySelector(".viewer");
 const aboutToggleButton = document.querySelector("#about-toggle");
 const aboutOverlay = document.querySelector("#about-overlay");
 const modelPicker = document.querySelector(".model-picker");
@@ -1510,13 +1511,25 @@ galleryToggleButton.addEventListener("click", () => {
 
 function closeAboutOverlay() {
   aboutOverlay.hidden = true;
+  viewer.dataset.help = "false";
   aboutToggleButton.setAttribute("aria-expanded", "false");
+  aboutToggleButton.setAttribute("aria-label", "About this project");
+}
+
+function openAboutOverlay() {
+  aboutOverlay.hidden = false;
+  viewer.dataset.help = "true";
+  aboutToggleButton.setAttribute("aria-expanded", "true");
+  aboutToggleButton.setAttribute("aria-label", "Close");
+  aboutOverlay.focus();
 }
 
 aboutToggleButton.addEventListener("click", () => {
-  aboutOverlay.hidden = false;
-  aboutToggleButton.setAttribute("aria-expanded", "true");
-  aboutOverlay.focus();
+  if (aboutOverlay.hidden) {
+    openAboutOverlay();
+  } else {
+    closeAboutOverlay();
+  }
 });
 aboutOverlay.addEventListener("click", () => {
   closeAboutOverlay();

@@ -46,6 +46,7 @@ canvas {
   touch-action: none;
 }
 
+/* Above the about overlay, so its buttons stay in reach while it is open. */
 .footer {
   position: absolute;
   z-index: 4;
@@ -78,6 +79,21 @@ canvas {
 
 .about-overlay[hidden] { display: none; }
 
+/* While the about overlay is open: the top buttons read in its white, the
+   "?" becomes a close cross and the model navigation steps aside. */
+.viewer[data-help="true"] .footer button { color: white; }
+
+#about-toggle[aria-expanded="true"] .when-closed,
+#about-toggle[aria-expanded="false"] .when-open { display: none; }
+
+/* A fixed width, so swapping ? for the cross moves nothing beside it. */
+#about-toggle {
+  width: 36px;
+  padding: 0;
+  text-align: center;
+}
+
+/* Set in the same size as the navigation's buttons. */
 .about-content {
   width: min(100%, 640px);
   margin: auto;
