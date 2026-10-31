@@ -5,6 +5,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { N8AOPass } from "n8ao";
 import { MODELS, inkColorFor } from "./models.js";
 import { STONE_DEFAULTS, stoneSettings } from "./stone-presets.js";
@@ -146,7 +148,10 @@ const outputPass = new OutputPass();
 outputPass.material.fragmentShader = outputPass.material.fragmentShader
   .replace(/}\s*$/, "gl_FragColor.rgb *= gl_FragColor.a;\n}");
 composer.addPass(outputPass);
-composer.addPass(new SMAAPass(1, 1));
+// Anti-aliasing: SMAA's three passes on desktop; on phones the single, cheaper
+// FXAA pass, whose softness the dense screen hides.
+const fxaaPass = isTouchDevice ? new ShaderPass(FXAAShader) : null;
+composer.addPass(fxaaPass ?? new SMAAPass(1, 1));
 
 // Distance haze in the page's background colour. Blending toward a fog colour
 // would be shifted by tone mapping, so instead the fragment's alpha falls off
@@ -524,6 +529,10 @@ function resize() {
   if (!width || !height) return;
   renderer.setSize(width, height, false);
   composer.setSize(width, height);
+  if (fxaaPass) {
+    const pixelRatio = renderer.getPixelRatio();
+    fxaaPass.material.uniforms.resolution.value.set(1 / (width * pixelRatio), 1 / (height * pixelRatio));
+  }
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   if (modelBounds.isEmpty() === false) {
