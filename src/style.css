@@ -403,7 +403,7 @@ button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .stats {
   position: absolute;
   z-index: 2;
-  bottom: max(12px, env(safe-area-inset-bottom));
+  top: max(12px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
   margin: 0;
   font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
