@@ -1497,7 +1497,7 @@ motionButton.addEventListener("click", toggleMotion);
 
 // Turntable sound. The record plays at the specimen's spin: the motor speed
 // is normal playback, a drag scratches, pause lets it wind down.
-const SCRATCH_TRACK = "./assets/audio/moulinet.m4a";
+const SCRATCH_TRACK = "./assets/audio/stratacut_song.mp3";
 const SOUND_TIP_DURATION = 3000; // ms
 const soundTip = document.querySelector("#sound-tip");
 let scratch = null;
