@@ -1662,21 +1662,31 @@ window.addEventListener("popstate", () => {
   changeModel(modelIndexFromUrl(), false);
 });
 
-// Once the first model is on screen, fetch the others one at a time so later
-// switches are instant. Neighbours of the current model come first.
-async function prefetchRemainingModels() {
+// The next model worth fetching: the current model's neighbours, then the rest
+// in order. Asked afresh each time, so the neighbours follow the navigation.
+function nextModelToFetch(failed) {
   const count = MODELS.length;
-  const order = [];
-  for (let step = 1; step <= count / 2; step++) {
-    order.push((currentModelIndex + step) % count, (currentModelIndex - step + count) % count);
-  }
-  for (const index of new Set(order)) {
-    if (modelRequests.has(index)) continue;
+  const candidates = [
+    (currentModelIndex + 1) % count,
+    (currentModelIndex - 1 + count) % count,
+    ...MODELS.keys()
+  ];
+  return candidates.find((index) => !modelRequests.has(index) && !failed.has(index)) ?? -1;
+}
+
+// Once the first model is on screen, fetch the others one at a time so later
+// switches are instant.
+async function prefetchRemainingModels() {
+  const failed = new Set();
+  while (true) {
     await nextIdle();
+    const index = nextModelToFetch(failed);
+    if (index < 0) return;
     try {
       await fetchModel(index);
     } catch {
       modelRequests.delete(index);
+      failed.add(index);
     }
   }
 }
