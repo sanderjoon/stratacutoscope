@@ -31,13 +31,13 @@ const GALLERY_MARGIN = 1.15; // of the grid's half-extent; air around the grid i
 const TAP_SLOP = 8; // px a press may move and still pick a model
 const TAP_DURATION = 500; // ms
 const FLICK_WINDOW = 80; // ms; a release later than this after the last move is not a flick
-const AUTO_ROTATION_SPEED = 0.65; // rad/s, the turntable's motor speed
+const AUTO_ROTATION_SPEED = 1.571*2; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
 const GYROSCOPE_Y_SENSITIVITY = 10;
 // Rates (1/s) at which the free-spinning velocity relaxes toward the motor
 // speed. They shape drag inertia and play/pause spin-up/coast-down alike.
-const HORIZONTAL_INERTIA_DAMPING = 1.1;
+const HORIZONTAL_INERTIA_DAMPING = 3;
 const VERTICAL_INERTIA_DAMPING = 4;
 // Engineered stone in the cut face: chips of a few tones set in a veined
 // resin. Everything is generated in the model's own space, so the cut shows
@@ -1497,7 +1497,7 @@ motionButton.addEventListener("click", toggleMotion);
 
 // Turntable sound. The record plays at the specimen's spin: the motor speed
 // is normal playback, a drag scratches, pause lets it wind down.
-const SCRATCH_TRACK = "./assets/audio/stratacut_song.mp3";
+const SCRATCH_TRACK = "./assets/audio/Strata_Horse (120 BPM).wav";
 const SOUND_TIP_DURATION = 3000; // ms
 const soundTip = document.querySelector("#sound-tip");
 let scratch = null;
