@@ -9,7 +9,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { N8AOPass } from "n8ao";
-import { MODELS, inkColorFor } from "./models.js";
+import { DEFAULT_TURN_DURATION, MODELS, inkColorFor } from "./models.js";
 import { STONE_DEFAULTS, stoneSettings } from "./stone-presets.js";
 import { createScratch } from "./scratch.js";
 const CUT_ZOOM_SENSITIVITY = 1;
@@ -31,7 +31,6 @@ const GALLERY_MARGIN = 1.15; // of the grid's half-extent; air around the grid i
 const TAP_SLOP = 8; // px a press may move and still pick a model
 const TAP_DURATION = 500; // ms
 const FLICK_WINDOW = 80; // ms; a release later than this after the last move is not a flick
-const AUTO_ROTATION_SPEED = 1.571*2; // rad/s, the turntable's motor speed
 const DRAG_ROTATION_SENSITIVITY = 0.008;
 const VERTICAL_DRAG_ROTATION_SENSITIVITY = 0.002;
 const GYROSCOPE_Y_SENSITIVITY = 10;
@@ -463,7 +462,7 @@ let fitCameraDistance = 0;
 const activePointers = new Map();
 // Current spin, in the units applyDragRotation() takes (x: yaw, y: pitch).
 // A drag sets it directly; otherwise it relaxes toward the motor speed.
-const angularVelocity = new THREE.Vector2(-AUTO_ROTATION_SPEED, 0);
+const angularVelocity = new THREE.Vector2(-2 * Math.PI / DEFAULT_TURN_DURATION, 0);
 let specimenPitch = 0;
 let specimenYaw = 0;
 const pitchRotation = new THREE.Quaternion();
@@ -789,9 +788,15 @@ function relaxToward(value, target, rate, delta) {
   return Math.abs(next - target) < 1e-4 ? target : next;
 }
 
+// The current model's turntable speed, rad/s.
+function motorSpeed() {
+  const turnDuration = MODELS[currentModelIndex]?.turnDuration ?? DEFAULT_TURN_DURATION;
+  return 2 * Math.PI / turnDuration;
+}
+
 // applyDragRotation() subtracts yaw, so the motor turns in the negative direction.
 function motorVelocity() {
-  return motionEnabled ? -AUTO_ROTATION_SPEED : 0;
+  return motionEnabled ? -motorSpeed() : 0;
 }
 
 // The gallery is seen from a fixed height, so only the turn responds there.
@@ -1558,7 +1563,7 @@ function playbackSpeed(delta) {
   const change = previousYaw === null ? 0 : yaw - previousYaw;
   previousYaw = yaw;
   if (!delta || Math.abs(change) > Math.PI) return 0;
-  return change / delta / AUTO_ROTATION_SPEED;
+  return change / delta / motorSpeed();
 }
 
 // Space toggles the turntable too, unless a focused control would already

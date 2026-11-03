@@ -1,5 +1,10 @@
 // Plain data shared by the page and the build. Keep this free of browser and
 // three.js imports so vite.config.js can load it too.
+//
+// A model can set its own turntable speed with the optional field turnDuration,
+// in seconds per full turn. At 120 BPM and 2 s a turn, one turn is a bar.
+export const DEFAULT_TURN_DURATION = 2;
+
 export const MODELS = [
   {
     name: "Horse",
