@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
@@ -533,7 +534,7 @@ const planeNormal = new THREE.Vector3(0, 0, 1);
 const capGeometry = new THREE.PlaneGeometry(1, 1);
 const cameraDirectionForFit = new THREE.Vector3();
 let previousPointerTime = 0;
-const modelLoader = new GLTFLoader();
+const modelLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
 // Parsed models are kept, so a switch only assembles meshes.
 const modelRequests = new Map();
 

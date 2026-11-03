@@ -11,11 +11,16 @@
 //     indexes them welded, so the stencil passes see a closed surface
 //   - stores the bounds, the convex-hull vertices and the radius in the
 //     scene's extras, where the page reads them from gltf.scene.userData
+//   - compresses the meshes with meshopt, snapping the positions to a grid and
+//     quantizing the normals; the colours stay exact, as the stone presets are
+//     keyed by them
 // Run with `yarn prepare-models` after adding or changing a model.
 import { readdir, mkdir, stat } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { NodeIO, PropertyType, getBounds } from "@gltf-transform/core";
-import { dedup, flatten, prune, transformMesh } from "@gltf-transform/functions";
+import { EXTMeshoptCompression, KHRMeshQuantization } from "@gltf-transform/extensions";
+import { dedup, flatten, prune, quantize, reorder, transformMesh } from "@gltf-transform/functions";
+import { MeshoptEncoder } from "meshoptimizer";
 import { Vector3 } from "three";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
 
@@ -24,6 +29,8 @@ const OUTPUT_DIR = new URL("../public/assets/models/", import.meta.url).pathname
 const STENCIL_FLAG = { stratacutoscope: "stencil" };
 const HULL_SAMPLE_LIMIT = 50000; // vertices per mesh fed to the hull
 const HULL_DIGITS = 4; // significant digits kept for hull vertices; they only frame the view
+const POSITION_BITS = 14; // grid steps per half-extent of the model, as a power of two
+const NORMAL_BITS = 10;
 
 function isAllZero(accessor) {
   const element = [];
@@ -115,6 +122,21 @@ function smoothNormals(document, primitive) {
   previous?.dispose();
 }
 
+// Snaps the positions to one power-of-two grid for the whole model. They stay
+// floats, so the page needs no node transforms to undo, but their low bits are
+// zero and compress well. Vertices at one position stay at one position, so
+// the stencil surfaces stay closed, and the parts stay in register.
+function snapPositions(document, bounds) {
+  const extent = Math.max(...bounds.min.map(Math.abs), ...bounds.max.map(Math.abs));
+  const step = 2 ** (Math.ceil(Math.log2(extent)) - POSITION_BITS);
+  const accessors = new Set(document.getRoot().listMeshes().flatMap((mesh) =>
+    mesh.listPrimitives().map((primitive) => primitive.getAttribute("POSITION"))));
+  for (const accessor of accessors) {
+    const array = accessor.getArray();
+    for (let i = 0; i < array.length; i++) array[i] = Math.round(array[i] / step) * step;
+  }
+}
+
 function hullVertices(points, bounds) {
   try {
     const hull = new ConvexHull().setFromPoints(points);
@@ -138,7 +160,9 @@ function hullVertices(points, bounds) {
 }
 
 async function prepare(name) {
-  const io = new NodeIO();
+  const io = new NodeIO()
+    .registerExtensions([EXTMeshoptCompression, KHRMeshQuantization])
+    .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   const document = await io.read(join(SOURCE_DIR, `${name}.glb`));
   await document.transform(flatten());
   const root = document.getRoot();
@@ -170,6 +194,9 @@ async function prepare(name) {
     meshNodes.push(node);
   }
   if (!meshNodes.length) throw new Error(`${name}: no mesh found.`);
+  // Vertex order for compression. Done before the stencil primitives exist, as
+  // reordering would give each its own copy of the positions it shares.
+  await document.transform(reorder({ encoder: MeshoptEncoder, target: "size" }));
 
   const hullInput = [];
   for (const node of meshNodes) {
@@ -228,6 +255,13 @@ async function prepare(name) {
 
   // Baking transforms splits accessors that meshes shared; merge them back.
   await document.transform(dedup({ propertyTypes: [PropertyType.ACCESSOR] }), prune());
+
+  snapPositions(document, bounds);
+  await document.transform(quantize({ pattern: /^NORMAL$/, quantizeNormal: NORMAL_BITS }));
+  document.createExtension(EXTMeshoptCompression)
+    .setRequired(true)
+    .setEncoderOptions({ method: EXTMeshoptCompression.EncoderMethod.QUANTIZE });
+
   const output = join(OUTPUT_DIR, `${name}.glb`);
   await io.write(output, document);
   const before = (await stat(join(SOURCE_DIR, `${name}.glb`))).size;
@@ -236,6 +270,7 @@ async function prepare(name) {
   for (const line of summary) console.log(`  ${line}`);
 }
 
+await MeshoptEncoder.ready;
 await mkdir(OUTPUT_DIR, { recursive: true });
 const names = (await readdir(SOURCE_DIR))
   .filter((file) => file.endsWith(".glb"))
