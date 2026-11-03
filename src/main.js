@@ -9,7 +9,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import { N8AOPass } from "n8ao";
-import { DEFAULT_TURN_DURATION, MODELS, inkColorFor } from "./models.js";
+import { DEFAULT_AUDIO, DEFAULT_TURN_DURATION, MODELS, inkColorFor } from "./models.js";
 import { STONE_DEFAULTS, stoneSettings } from "./stone-presets.js";
 import { createScratch } from "./scratch.js";
 const CUT_ZOOM_SENSITIVITY = 1;
@@ -1425,6 +1425,7 @@ async function selectFromGallery(index, historyMode = "push") {
     createGalleryItem(previous);
     applyGalleryState(galleryView(), galleryView(), 1);
     showModelIdentity(index);
+    playModelTrack();
     stoneTweaks?.show(MODELS[index], capEntries);
     rememberModelInUrl(index, historyMode);
   }
@@ -1462,6 +1463,7 @@ async function changeModel(index, historyMode = "push", direction = 0) {
     await exit;
     loadModel(model, MODELS[index].id);
     currentModelIndex = index;
+    playModelTrack();
     stoneTweaks?.show(MODELS[index], capEntries);
     if (isFirstModel) {
       playIntro();
@@ -1502,7 +1504,6 @@ motionButton.addEventListener("click", toggleMotion);
 
 // Turntable sound. The record plays at the specimen's spin: the motor speed
 // is normal playback, a drag scratches, pause lets it wind down.
-const SCRATCH_TRACK = "./assets/audio/Strata_Horse (120 BPM).wav";
 const SOUND_TIP_DURATION = 3000; // ms
 const soundTip = document.querySelector("#sound-tip");
 let scratch = null;
@@ -1510,10 +1511,21 @@ let soundOn = false;
 let previousYaw = null;
 let soundTipTimer = null;
 
+function modelTrack() {
+  return MODELS[currentModelIndex]?.audio ?? DEFAULT_AUDIO;
+}
+
+// A track that fails to load leaves the previous one playing.
+function playModelTrack() {
+  scratch?.setTrack(modelTrack()).catch((error) => {
+    console.warn("Could not load the model's sound:", error);
+  });
+}
+
 // The track loads once the first model is up, without holding the page: the
 // speaker spins meanwhile, then settles as muted and points itself out.
 async function preloadSound() {
-  scratch ??= createScratch(SCRATCH_TRACK);
+  scratch ??= createScratch(modelTrack());
   try {
     await scratch.preload();
   } catch (error) {
@@ -1545,7 +1557,7 @@ soundButton.addEventListener("click", async () => {
     return;
   }
   try {
-    scratch ??= createScratch(SCRATCH_TRACK);
+    scratch ??= createScratch(modelTrack());
     await scratch.start();
   } catch (error) {
     console.error("Could not start the sound:", error);

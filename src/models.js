@@ -1,16 +1,22 @@
 // Plain data shared by the page and the build. Keep this free of browser and
 // three.js imports so vite.config.js can load it too.
 //
-// A model can set its own turntable speed with the optional field turnDuration,
-// in seconds per full turn. At 120 BPM and 2 s a turn, one turn is a bar.
+// A model can set its own turntable with two optional fields:
+//   turnDuration  seconds per full turn
+//   audio         the loop that plays at that spin
+// The loop plays as recorded at the turnDuration, so it stays in time with the
+// model when its length is a whole number of turns. At 120 BPM and 2 s a turn,
+// one turn is a bar.
 export const DEFAULT_TURN_DURATION = 2;
+export const DEFAULT_AUDIO = "./assets/audio/Strata_Beat (120 BPM).wav";
 
 export const MODELS = [
   {
     name: "Horse",
     id: "horse",
     url: "./assets/models/horse.glb",
-    backgroundColor: "#760DD9"
+    backgroundColor: "#760DD9",
+    audio: "./assets/audio/Strata_Horse (120 BPM).wav"
   },
   {
     name: "Handshake",
@@ -22,7 +28,8 @@ export const MODELS = [
     name: "Rotating Head",
     id: "rotatinghead",
     url: "./assets/models/rotating-head.glb",
-    backgroundColor: "#9E4210"
+    backgroundColor: "#9E4210",
+    audio: "./assets/audio/Strata_Headturn (120 BPM).wav"
   },
   {
     name: "Dialogue",
