@@ -22,7 +22,8 @@ export const MODELS = [
     name: "Handshake",
     id: "handshake",
     url: "./assets/models/handshake.glb",
-    backgroundColor: "#0d9d36"
+    backgroundColor: "#0d9d36",
+    turnDuration: "4"
   },
   {
     name: "Rotating Head",
@@ -35,7 +36,8 @@ export const MODELS = [
     name: "Dialogue",
     id: "dialogue",
     url: "./assets/models/dialogue.glb",
-    backgroundColor: "#506666"
+    backgroundColor: "#506666",
+    turnDuration: "4"
   },
   {
     name: "Bouncing Balls",
@@ -47,7 +49,8 @@ export const MODELS = [
     name: "Football",
     id: "football",
     url: "./assets/models/football.glb",
-    backgroundColor: "#0d9d36"
+    backgroundColor: "#0d9d36",
+    turnDuration: "8"
   }
 ];
 
