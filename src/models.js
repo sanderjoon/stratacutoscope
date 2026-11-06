@@ -39,7 +39,7 @@ export const MODELS = [
     backgroundColor: "#506666",
     turnDuration: "4"
   },
-  {
+  /*{
     name: "Bouncing Balls",
     id: "bouncingballs",
     url: "./assets/models/bouncing-balls.glb",
@@ -51,7 +51,7 @@ export const MODELS = [
     url: "./assets/models/football.glb",
     backgroundColor: "#0d9d36",
     turnDuration: "8"
-  }
+  }*/
 ];
 
 // Text colour that reads against a background. Mirrors CSS contrast-color():
