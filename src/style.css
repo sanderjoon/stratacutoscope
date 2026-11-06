@@ -160,14 +160,14 @@ body {
   transform: translateX(-50%);
 }
 
-/* Gone at once while the about overlay is up (All fades its own parts). */
+/* Gone at once while the about overlay is up. */
 .viewer[data-help="true"] .model-navigation {
   opacity: 0;
   pointer-events: none;
 }
 
 
-/* Prev and Next sit in equal side columns so All stays exactly centred
+/* Prev and Next sit in equal side columns so the gallery toggle stays centred
    regardless of label width. */
 .model-navigation-buttons {
   display: grid;
@@ -219,10 +219,24 @@ button:hover { opacity: 0.65; }
   body, button { transition: none; }
 }
 button[aria-pressed="true"] { font-weight: 800; }
-/* Not All: bold would widen it and shift the row. */
-#gallery-toggle[aria-pressed="true"] { font-weight: inherit; }
+#gallery-toggle {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+}
 
-/* In the gallery only All stays; the name and Prev/Next fade away as the
+#gallery-toggle .gallery-icon {
+  display: block;
+  width: 1.25em;
+  height: 1.25em;
+  background-color: currentColor;
+  -webkit-mask: url("/assets/images/thumbnails.svg") center / contain no-repeat;
+  mask: url("/assets/images/thumbnails.svg") center / contain no-repeat;
+}
+
+/* In the gallery only the toggle stays; the name and Prev/Next fade away as the
    gallery transition starts. */
 .model-navigation .model-name,
 .model-navigation #previous-model,

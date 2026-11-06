@@ -55,27 +55,28 @@
       <div class="about-overlay" id="about-overlay" role="dialog" aria-modal="true" aria-label="About Stratacutoscope" tabindex="-1" hidden>
         <div style="opacity: .9;" class="about-content">
           <p><img src="./stratacutoscope.gif" /><br>
-          <p>All 3D models made by <a style="color:white;" href="https://www.sanderjoon.com" target="_blank"><b>Sander Joon</b></a> in Blender.</p>
+          <p>3D models by <a style="color:white;" href="https://www.sanderjoon.com" target="_blank"><b>Sander Joon</b></a> made in Blender.</p>
+          <p>Code and Shaders by <a style="color:white;" href="https://baku89.com/" target="_blank"><b>Baku Hashimoto</b></a>.</p>
           <div class="touch-only">
             <dl class="hints">
-              <div><dt>Drag</dt><span class="leader" aria-hidden="true"></span><dd>rotate</dd></div>
-              <div><dt>Pinch</dt><span class="leader" aria-hidden="true"></span><dd>zoom and cut deeper</dd></div>
+              <div><dt>Drag</dt><span class="leader" aria-hidden="true"></span><dd>Rotate</dd></div>
+              <div><dt>Pinch</dt><span class="leader" aria-hidden="true"></span><dd>Zoom and cut deeper</dd></div>
             </dl>
           </div>
           <div class="mouse-only">
             <dl class="hints">
-              <div><dt>Drag</dt><span class="leader" aria-hidden="true"></span><dd>rotate</dd></div>
-              <div><dt>Scroll</dt><span class="leader" aria-hidden="true"></span><dd>zoom and cut deeper</dd></div>
+              <div><dt>Drag</dt><span class="leader" aria-hidden="true"></span><dd>Rotate</dd></div>
+              <div><dt>Scroll</dt><span class="leader" aria-hidden="true"></span><dd>Zoom & Cut Deeper</dd></div>
             </dl>
           </div>
-          <p><small style="opacity: 50%; font-style: italic;">Please reach out to <a style="color:white;" href="mailto:sander.joon@gmail.com"><b>sander.joon@gmail.com</b></a> if you have any suggestions<i>!</i></small></p>
+          <p><small style="opacity: 50%; font-style: italic;">Please reach out to <a style="color:white;" href="mailto:sander.joon@gmail.com"><b>sander.joon@gmail.com</b></a> if you have any suggestions!<i></i></small></p>
         </div>
       </div>
       <nav class="model-navigation" aria-label="Model selection">
         <p class="model-name" id="model-name" aria-live="polite"></p>
         <div class="model-navigation-buttons">
           <button id="previous-model" type="button" aria-label="Previous model" disabled>&lt; Prev</button>
-          <button id="gallery-toggle" type="button" aria-pressed="false" aria-label="Show all models" title="Show all models" disabled>All</button>
+          <button id="gallery-toggle" type="button" aria-pressed="false" aria-label="Show all models" title="Show all models" disabled><span class="gallery-icon" aria-hidden="true"></span></button>
           <button id="next-model" type="button" aria-label="Next model" disabled>Next &gt;</button>
         </div>
       </nav>
