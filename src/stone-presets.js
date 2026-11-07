@@ -5,22 +5,22 @@
 // Open the page with ?tweak to tune these live; the pane copies a prompt with
 // a replacement entry for the current model.
 export const STONE_DEFAULTS = {
-  chipColors: ["#141414", "#f5efe4", "#8f8c86", "#f5efe4"], // the chips' tones, picked at random per chip
-  chipDensity: 1, // multiplier on every chip layer's density
-  chipEmbed: 0.5, // how far a chip's tone can sink toward the resin colour
+  chipColors: ["#ffe9c4", "#c38e2c", "#f2ccc2", "#fbefd8"], // the chips' tones, picked at random per chip
+  chipDensity: 0.05, // multiplier on every chip layer's density
+  chipEmbed: 0, // how far a chip's tone can sink toward the resin colour
   // Veins: bands of one colour through the resin, repeating along a direction
   // (veinLayers) and/or following noise (veinWave). Straight stripes at one
   // end, wandering marble veins at the other.
-  veinColor: "#141414",
-  veinStrength: 0.7, // how solidly the colour covers the resin
-  veinScale: 0.22, // of the noise, in base cells; smaller is a wider, lazier wander
+  veinColor: "#000000",
+  veinStrength: 1, // how solidly the colour covers the resin
+  veinScale: 0.5, // of the noise, in base cells; smaller is a wider, lazier wander
   veinWave: 1, // how far the noise bends the bands, in bands; 0 leaves them unbent
   veinRipple: 0, // how far a plain sine wave along the radius bends them, in bands
   veinRippleScale: 0.3, // waves of that ripple per base cell
   veinLayers: 0, // straight bands per base cell; 0 leaves only the noise
   veinAngle: 0, // degrees the bands tilt outward from horizontal, like a cone
-  veinWidth: 0.08, // of each band's period that is vein
-  veinContrast: 0.6, // 0: soft gradient, 1: hard edge
+  veinWidth: 0.2, // of each band's period that is vein
+  veinContrast: 1, // 0: soft gradient, 1: hard edge
   cloudStrength: 0.14, // mottling of the resin's brightness
   emissive: 0.65 // how much the stone glows on its own, so the cut reads flat
 };
@@ -121,24 +121,51 @@ export const STONE_PRESETS = {
     }
   },
   horse: {
-    "#a0730f": {
-      chipColors: ["#f5efe4", "#f5efe4", "#f5efe4", "#f5efe4"],
-      veinColor: "#cc8300",
-      roughness: 0.848,
-      chipDensity: 0.01,
-      chipEmbed: 1,
-      veinStrength: 0,
-      veinScale: 0.617,
-      veinWidth: 0.587,
-      veinContrast: 0,
-      cloudStrength: 0.293
-    },
-    "#724c00": {
-      chipDensity: 0.326
-    },
-    "#ff8787": {
-      chipDensity: 2
-    }
+      "#a0730f": {
+    "chipColors": [
+      "#33af64",
+      "#ff0000",
+      "#464646",
+      "#797979"
+    ],
+    "veinColor": "#ffd900",
+    "chipDensity": 0.283,
+    "veinStrength": 0.087,
+    "veinScale": 1,
+    "veinWave": 0.391,
+    "veinWidth": 0.348,
+    "cloudStrength": 0
+  },
+  "#724c00": {
+    "veinColor": "#ac4500",
+    "chipDensity": 0.326,
+    "veinWidth": 0.75
+  },
+  "#ffc440": {
+    "chipColors": [
+      "#ff00ce",
+      "#c38e2c",
+      "#f2ccc2",
+      "#fbefd8"
+    ],
+    "veinColor": "#ffe8cc",
+    "metalness": 0,
+    "chipDensity": 2,
+    "veinScale": 0.553,
+    "veinWave": 1.402,
+    "veinWidth": 0.913,
+    "cloudStrength": 0,
+    "emissive": 0.636
+  },
+  "#ff8787": {
+    "veinColor": "#fffc99",
+    "chipDensity": 2,
+    "veinScale": 1
+  },
+  "#2f3141": {
+    "veinColor": "#c82194",
+    "veinScale": 1
+  }
   },
   rotatinghead: {
     "#a09500": {
@@ -198,6 +225,63 @@ export const STONE_PRESETS = {
       veinScale: 1,
       veinWidth: 0.815,
       veinContrast: 1
+    }
+  },
+  walker: {
+    "#a38719": {
+      veinColor: "#ff5c5c",
+      veinScale: 0.499,
+      veinRippleScale: 0.262,
+      veinWidth: 0.337,
+      emissive: 0.587
+    },
+    "#2f5fd6": {
+      veinColor: "#c527b4",
+      chipDensity: 0.109,
+      veinStrength: 0.652,
+      veinScale: 0.68
+    },
+    "#44963f": {
+      veinColor: "#6259bc",
+      veinWidth: 0.13
+    },
+    "#c74c1d": {
+      chipColors: ["#d45aff", "#0eff45", "#ff3500", "#ffc047"],
+      veinColor: "#8779c8",
+      chipDensity: 1.043,
+      veinScale: 1,
+      veinWave: 1.402,
+      veinRippleScale: 0.05,
+      veinWidth: 0.478,
+      emissive: 0.538
+    },
+    "#e89ed1": {
+      veinColor: "#27db2c"
+    },
+    "#e1e5a8": {
+      veinColor: "#5e1692",
+      chipDensity: 0,
+      veinScale: 1,
+      veinWave: 0.946,
+      veinRippleScale: 2,
+      veinAngle: -3.913,
+      veinWidth: 0.141
+    },
+    "#e3e89e": {
+      veinColor: "#ff3232",
+      veinStrength: 0.696,
+      veinScale: 0.904
+    },
+    "#d62fa3": {
+      veinColor: "#820f0f",
+      veinWidth: 0.674
+    },
+    "#ffffff": {
+      veinColor: "#ef0000"
+    },
+    "#e30000": {
+      veinColor: "#ff3eb3",
+      veinScale: 1
     }
   }
 };

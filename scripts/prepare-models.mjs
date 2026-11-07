@@ -17,6 +17,7 @@
 // Run with `yarn prepare-models` after adding or changing a model.
 import { readdir, mkdir, stat } from "node:fs/promises";
 import { join, parse } from "node:path";
+import { fileURLToPath } from "node:url";
 import { NodeIO, PropertyType, getBounds } from "@gltf-transform/core";
 import { EXTMeshoptCompression, KHRMeshQuantization } from "@gltf-transform/extensions";
 import { dedup, flatten, prune, quantize, reorder, transformMesh } from "@gltf-transform/functions";
@@ -24,8 +25,8 @@ import { MeshoptEncoder } from "meshoptimizer";
 import { Vector3 } from "three";
 import { ConvexHull } from "three/addons/math/ConvexHull.js";
 
-const SOURCE_DIR = new URL("../models/", import.meta.url).pathname;
-const OUTPUT_DIR = new URL("../public/assets/models/", import.meta.url).pathname;
+const SOURCE_DIR = fileURLToPath(new URL("../models/", import.meta.url));
+const OUTPUT_DIR = fileURLToPath(new URL("../public/assets/models/", import.meta.url));
 const STENCIL_FLAG = { stratacutoscope: "stencil" };
 const HULL_SAMPLE_LIMIT = 50000; // vertices per mesh fed to the hull
 const HULL_DIGITS = 4; // significant digits kept for hull vertices; they only frame the view

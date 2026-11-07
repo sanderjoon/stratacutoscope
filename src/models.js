@@ -30,15 +30,24 @@ export const MODELS = [
     id: "rotatinghead",
     url: "./assets/models/rotating-head.glb",
     backgroundColor: "#9E4210",
-    audio: "./assets/audio/Strata_Headturn (120 BPM).wav"
+    audio: "./assets/audio/rotatinghead.m4a"
   },
   {
     name: "Dialogue",
     id: "dialogue",
     url: "./assets/models/dialogue.glb",
     backgroundColor: "#506666",
-    turnDuration: "4"
+    turnDuration: "4",
+    audio: "./assets/audio/dialogue.m4a"
   },
+  {
+    name: "Walker",
+    id: "walker",
+    url: "./assets/models/walker.glb",
+    backgroundColor: "#4f5e5c",
+    turnDuration: "11",
+    audio: "./assets/audio/walker.m4a"
+  }
   /*{
     name: "Bouncing Balls",
     id: "bouncingballs",
