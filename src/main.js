@@ -461,6 +461,7 @@ controls.target.set(0, 0, 0);
 let fitDistance = 4;
 let fitCameraDistance = 0;
 const activePointers = new Map();
+let motorSpeedScale = 1;
 // Current spin, in the units applyDragRotation() takes (x: yaw, y: pitch).
 // A drag sets it directly; otherwise it relaxes toward the motor speed.
 const angularVelocity = new THREE.Vector2(-2 * Math.PI / DEFAULT_TURN_DURATION, 0);
@@ -797,7 +798,7 @@ function motorSpeed() {
 
 // applyDragRotation() subtracts yaw, so the motor turns in the negative direction.
 function motorVelocity() {
-  return motionEnabled ? -motorSpeed() : 0;
+  return motionEnabled ? -motorSpeed() * motorSpeedScale : 0;
 }
 
 // The gallery is seen from a fixed height, so only the turn responds there.
@@ -1781,10 +1782,16 @@ function animate() {
   const frameInterval = lastFrameTime ? now - lastFrameTime : 0;
   const delta = Math.min(frameInterval / 1000, 0.05);
   lastFrameTime = now;
-  // The model behaves like a turntable. While nobody holds it, the spin relaxes
-  // exponentially toward the motor speed (zero when paused), so a flick eases
-  // back into the auto-rotation and pause coasts to a stop. While a finger is
-  // on it the motor keeps turning underneath; the drag is added on top.
+  // Holding the model eases its motor speed to zero; releasing eases it back
+  // to the motor speed. Drag flicks relax toward that same speed.
+  motorSpeedScale = relaxToward(
+    motorSpeedScale,
+    activePointers.size || !motionEnabled ? 0 : 1,
+    HORIZONTAL_INERTIA_DAMPING,
+    delta
+  );
+  // The model behaves like a turntable. A flick eases back into the motor
+  // speed, while pause coasts to a stop.
   if (activePointers.size) {
     applyDragRotation(motorVelocity() * delta, 0);
   } else {
